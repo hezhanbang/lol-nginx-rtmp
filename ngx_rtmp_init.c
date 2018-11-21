@@ -76,7 +76,6 @@ ngx_rtmp_init_connection(ngx_connection_t *c)
 #endif
 
         case AF_UNIX:
-            unix_socket = 1;
             /* fall through */
 
         default: /* AF_INET */
