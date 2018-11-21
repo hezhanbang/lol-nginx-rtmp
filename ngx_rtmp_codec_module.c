@@ -26,8 +26,6 @@ static ngx_int_t ngx_rtmp_codec_copy_meta(ngx_rtmp_session_t *s,
        ngx_rtmp_header_t *h, ngx_chain_t *in);
 static ngx_int_t ngx_rtmp_codec_prepare_meta(ngx_rtmp_session_t *s,
        uint32_t timestamp);
-static void ngx_rtmp_codec_parse_aac_header(ngx_rtmp_session_t *s,
-       ngx_chain_t *in);
 static void ngx_rtmp_codec_parse_avc_header(ngx_rtmp_session_t *s,
        ngx_chain_t *in);
 #if (NGX_DEBUG)
@@ -176,11 +174,6 @@ ngx_rtmp_codec_disconnect(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
         ctx->avc_header = NULL;
     }
 
-    if (ctx->aac_header) {
-        ngx_rtmp_free_shared_chain(cscf, ctx->aac_header);
-        ctx->aac_header = NULL;
-    }
-
     if (ctx->meta) {
         ngx_rtmp_free_shared_chain(cscf, ctx->meta);
         ctx->meta = NULL;
@@ -242,12 +235,7 @@ ngx_rtmp_codec_av(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
     cscf = ngx_rtmp_get_module_srv_conf(s, ngx_rtmp_core_module);
     header = NULL;
 
-    if (h->type == NGX_RTMP_MSG_AUDIO) {
-        if (ctx->audio_codec_id == NGX_RTMP_AUDIO_AAC) {
-            header = &ctx->aac_header;
-            ngx_rtmp_codec_parse_aac_header(s, in);
-        }
-    } else {
+    if (h->type == NGX_RTMP_MSG_VIDEO) {
         if (ctx->video_codec_id == NGX_RTMP_VIDEO_H264) {
             header = &ctx->avc_header;
             ngx_rtmp_codec_parse_avc_header(s, in);
@@ -265,92 +253,6 @@ ngx_rtmp_codec_av(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
     *header = ngx_rtmp_append_shared_bufs(cscf, NULL, in);
 
     return NGX_OK;
-}
-
-
-static void
-ngx_rtmp_codec_parse_aac_header(ngx_rtmp_session_t *s, ngx_chain_t *in)
-{
-    ngx_uint_t              idx;
-    ngx_rtmp_codec_ctx_t   *ctx;
-    ngx_rtmp_bit_reader_t   br;
-
-    static ngx_uint_t      aac_sample_rates[] =
-        { 96000, 88200, 64000, 48000,
-          44100, 32000, 24000, 22050,
-          16000, 12000, 11025,  8000,
-           7350,     0,     0,     0 };
-
-#if (NGX_DEBUG)
-    ngx_rtmp_codec_dump_header(s, "aac", in);
-#endif
-
-    ctx = ngx_rtmp_get_module_ctx(s, ngx_rtmp_codec_module);
-
-    ngx_rtmp_bit_init_reader(&br, in->buf->pos, in->buf->last);
-
-    ngx_rtmp_bit_read(&br, 16);
-
-    ctx->aac_profile = (ngx_uint_t) ngx_rtmp_bit_read(&br, 5);
-    if (ctx->aac_profile == 31) {
-        ctx->aac_profile = (ngx_uint_t) ngx_rtmp_bit_read(&br, 6) + 32;
-    }
-
-    idx = (ngx_uint_t) ngx_rtmp_bit_read(&br, 4);
-    if (idx == 15) {
-        ctx->sample_rate = (ngx_uint_t) ngx_rtmp_bit_read(&br, 24);
-    } else {
-        ctx->sample_rate = aac_sample_rates[idx];
-    }
-
-    ctx->aac_chan_conf = (ngx_uint_t) ngx_rtmp_bit_read(&br, 4);
-
-    if (ctx->aac_profile == 5 || ctx->aac_profile == 29) {
-        
-        if (ctx->aac_profile == 29) {
-            ctx->aac_ps = 1;
-        }
-
-        ctx->aac_sbr = 1;
-
-        idx = (ngx_uint_t) ngx_rtmp_bit_read(&br, 4);
-        if (idx == 15) {
-            ctx->sample_rate = (ngx_uint_t) ngx_rtmp_bit_read(&br, 24);
-        } else {
-            ctx->sample_rate = aac_sample_rates[idx];
-        }
-
-        ctx->aac_profile = (ngx_uint_t) ngx_rtmp_bit_read(&br, 5);
-        if (ctx->aac_profile == 31) {
-            ctx->aac_profile = (ngx_uint_t) ngx_rtmp_bit_read(&br, 6) + 32;
-        }
-    }
-
-    /* MPEG-4 Audio Specific Config
-
-       5 bits: object type
-       if (object type == 31)
-         6 bits + 32: object type
-       4 bits: frequency index
-       if (frequency index == 15)
-         24 bits: frequency
-       4 bits: channel configuration
-
-       if (object_type == 5)
-           4 bits: frequency index
-           if (frequency index == 15)
-             24 bits: frequency
-           5 bits: object type
-           if (object type == 31)
-             6 bits + 32: object type
-             
-       var bits: AOT Specific Config
-     */
-
-    ngx_log_debug3(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
-                   "codec: aac header profile=%ui, "
-                   "sample_rate=%ui, chan_conf=%ui",
-                   ctx->aac_profile, ctx->sample_rate, ctx->aac_chan_conf);
 }
 
 
