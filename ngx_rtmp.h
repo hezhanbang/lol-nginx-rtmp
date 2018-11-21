@@ -56,7 +56,6 @@ typedef struct {
 typedef struct {
     ngx_rtmp_conf_ctx_t    *ctx;
     ngx_str_t               addr_text;
-    unsigned                proxy_protocol:1;
 } ngx_rtmp_addr_conf_t;
 
 typedef struct {

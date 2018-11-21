@@ -566,7 +566,6 @@ found:
     addr->bind = listen->bind;
     addr->wildcard = listen->wildcard;
     addr->so_keepalive = listen->so_keepalive;
-    addr->proxy_protocol = listen->proxy_protocol;
 #if (NGX_HAVE_KEEPALIVE_TUNABLE)
     addr->tcp_keepidle = listen->tcp_keepidle;
     addr->tcp_keepintvl = listen->tcp_keepintvl;
