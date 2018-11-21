@@ -724,7 +724,6 @@ ngx_rtmp_add_addrs(ngx_conf_t *cf, ngx_rtmp_port_t *mport,
 
         addrs[i].conf.addr_text.len = len;
         addrs[i].conf.addr_text.data = p;
-        addrs[i].conf.proxy_protocol = addr->proxy_protocol;
     }
 
     return NGX_OK;
