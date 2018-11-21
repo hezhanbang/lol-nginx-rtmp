@@ -191,10 +191,8 @@ ngx_rtmp_codec_av(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
     ngx_rtmp_codec_ctx_t               *ctx;
     ngx_chain_t                       **header;
     uint8_t                             fmt;
-    static ngx_uint_t                   sample_rates[] =
-                                        { 5512, 11025, 22050, 44100 };
 
-    if (h->type != NGX_RTMP_MSG_AUDIO && h->type != NGX_RTMP_MSG_VIDEO) {
+    if (h->type != NGX_RTMP_MSG_VIDEO) {
         return NGX_OK;
     }
 
@@ -210,15 +208,7 @@ ngx_rtmp_codec_av(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
     }
 
     fmt =  in->buf->pos[0];
-    if (h->type == NGX_RTMP_MSG_AUDIO) {
-        ctx->audio_codec_id = (fmt & 0xf0) >> 4;
-        ctx->audio_channels = (fmt & 0x01) + 1;
-        ctx->sample_size = (fmt & 0x02) ? 2 : 1;
-
-        if (ctx->sample_rate == 0) {
-            ctx->sample_rate = sample_rates[(fmt & 0x0c) >> 2];
-        }
-    } else {
+    if (h->type == NGX_RTMP_MSG_VIDEO) {
         ctx->video_codec_id = (fmt & 0x0f);
     }
 
@@ -769,15 +759,13 @@ ngx_rtmp_codec_meta_data(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
     ngx_memcpy(ctx->profile, v.profile, sizeof(v.profile));
     ngx_memcpy(ctx->level, v.level, sizeof(v.level));
 
-    ngx_log_debug8(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+    ngx_log_debug6(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
             "codec: data frame: "
             "width=%ui height=%ui duration=%ui frame_rate=%ui "
-            "video=%s (%ui) audio=%s (%ui)",
+            "video=%s (%ui)",
             ctx->width, ctx->height, ctx->duration, ctx->frame_rate,
             ngx_rtmp_get_video_codec_name(ctx->video_codec_id),
-            ctx->video_codec_id,
-            ngx_rtmp_get_audio_codec_name(ctx->audio_codec_id),
-            ctx->audio_codec_id);
+            ctx->video_codec_id);
 
     switch (cacf->meta) {
         case NGX_RTMP_CODEC_META_ON:
