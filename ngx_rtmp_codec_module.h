@@ -74,7 +74,6 @@ typedef struct {
     u_char                      level[32];
 
     ngx_chain_t                *avc_header;
-    ngx_chain_t                *aac_header;
 
     ngx_chain_t                *meta;
     ngx_uint_t                  meta_version;
