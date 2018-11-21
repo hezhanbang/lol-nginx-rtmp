@@ -61,7 +61,7 @@ if [  $? -ne 0 ];then
 fi
 rm -rf $BUILD_DIR/.heb*
 
-tar zxf ../doc/nginx-1.14.0.tar.gz -C $BUILD_DIR
+tar zxf ./doc/nginx-1.14.0.tar.gz -C $BUILD_DIR
 cd $BUILD_DIR/nginx-1.14.0
 ./configure --with-stream --with-debug --prefix=$ROOT_DIR/nginx --add-module=$ROOT_DIR
 
