@@ -8,7 +8,6 @@ RTMP_CORE_MODULES="                                         \
                 ngx_rtmp_access_module                      \
                 ngx_rtmp_live_module                        \
                 ngx_rtmp_play_module                        \
-                ngx_rtmp_mp4_module                         \
                 ngx_rtmp_netcall_module                     \
                 ngx_rtmp_relay_module                       \
                 ngx_rtmp_exec_module                        \
@@ -57,7 +56,6 @@ RTMP_CORE_SRCS="                                            \
                 $ngx_addon_dir/ngx_rtmp_access_module.c     \
                 $ngx_addon_dir/ngx_rtmp_live_module.c       \
                 $ngx_addon_dir/ngx_rtmp_play_module.c       \
-                $ngx_addon_dir/ngx_rtmp_mp4_module.c        \
                 $ngx_addon_dir/ngx_rtmp_netcall_module.c    \
                 $ngx_addon_dir/ngx_rtmp_relay_module.c      \
                 $ngx_addon_dir/ngx_rtmp_bandwidth.c         \
