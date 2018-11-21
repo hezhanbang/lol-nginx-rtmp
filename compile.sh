@@ -73,8 +73,8 @@ mv .heb2 ./objs/ngx_auto_config.h
 
 #编译nginx，并创建配置文件
 compileNginx
-rm -rf $ROOT_DIR/nginx/conf/nginx.conf
-cp $ROOT_DIR/../doc/nginx.conf $BUILD_DIR/install/conf/
+rm -rf $INSTALL_DIR/conf/nginx.conf
+cp $ROOT_DIR/doc/nginx.conf $INSTALL_DIR/conf/
 
 exit
 #设置vscode的gdb配置。
