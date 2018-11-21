@@ -7,7 +7,6 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include "ngx_rtmp.h"
-#include "ngx_rtmp_proxy_protocol.h"
 
 
 static void ngx_rtmp_close_connection(ngx_connection_t *c);
