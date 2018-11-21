@@ -810,26 +810,8 @@ ngx_rtmp_live_av(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
 
     if (codec_ctx) {
 
-        if (h->type == NGX_RTMP_MSG_AUDIO) {
-            header = codec_ctx->aac_header;
-
-            if (lacf->interleave) {
-                coheader = codec_ctx->avc_header;
-            }
-
-            if (codec_ctx->audio_codec_id == NGX_RTMP_AUDIO_AAC &&
-                ngx_rtmp_is_codec_header(in))
-            {
-                prio = 0;
-                mandatory = 1;
-            }
-
-        } else {
+        if (h->type == NGX_RTMP_MSG_VIDEO) {
             header = codec_ctx->avc_header;
-
-            if (lacf->interleave) {
-                coheader = codec_ctx->aac_header;
-            }
 
             if (codec_ctx->video_codec_id == NGX_RTMP_VIDEO_H264 &&
                 ngx_rtmp_is_codec_header(in))
@@ -894,8 +876,7 @@ ngx_rtmp_live_av(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
                 continue;
             }
 
-            if (lacf->wait_key && prio != NGX_RTMP_VIDEO_KEY_FRAME &&
-               (lacf->interleave || h->type == NGX_RTMP_MSG_VIDEO))
+            if (lacf->wait_key && prio != NGX_RTMP_VIDEO_KEY_FRAME && h->type == NGX_RTMP_MSG_VIDEO)
             {
                 ngx_log_debug0(NGX_LOG_DEBUG_RTMP, ss->connection->log, 0,
                                "live: skip non-key");
