@@ -74,8 +74,9 @@ mv .heb2 ./objs/ngx_auto_config.h
 #编译nginx，并创建配置文件
 compileNginx
 rm -rf $ROOT_DIR/nginx/conf/nginx.conf
-cp $ROOT_DIR/../doc/nginx.conf $ROOT_DIR/nginx/conf/
+cp $ROOT_DIR/../doc/nginx.conf $BUILD_DIR/install/conf/
 
+exit
 #设置vscode的gdb配置。
 VSCODE_GDB_DIR=$VSCODE_GDB_DIR/.vscode
 rm -rf $VSCODE_GDB_DIR
