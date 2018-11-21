@@ -1095,9 +1095,6 @@ ngx_rtmp_live_postconfiguration(ngx_conf_t *cf)
 
     /* register raw event handlers */
 
-    h = ngx_array_push(&cmcf->events[NGX_RTMP_MSG_AUDIO]);
-    *h = ngx_rtmp_live_av;
-
     h = ngx_array_push(&cmcf->events[NGX_RTMP_MSG_VIDEO]);
     *h = ngx_rtmp_live_av;
 
