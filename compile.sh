@@ -4,11 +4,12 @@ CUR_DIR=$(pwd)
 ROOT_DIR=$(dirname $(readlink -f $0))
 cd $ROOT_DIR
 
-BUILD_DIR=$ROOT_DIR/buildGb28181Nginx
-DEBUG=release
+BUILD_DIR=~/buildRtmp
+INSTALL_DIR=$BUILD_DIR/install
 VSCODE_GDB_DIR=$ROOT_DIR
+DEBUG=release
 ################################################## compile nginx
-function compileNginx {
+compileNginx() {
 	rm -rf $ROOT_DIR/nginx/sbin/*
 	make
 	make install
@@ -33,7 +34,7 @@ done
 
 echo "debugOpt=$debugOpt compileOpt=$compileOpt"
 echo "**************************************************"
-#sleep 3
+sleep 3
 
 ################################################## we compile nginx only and simply
 if [ ! -z $debugOpt ]; then
@@ -63,7 +64,7 @@ rm -rf $BUILD_DIR/.heb*
 
 tar zxf ./doc/nginx-1.14.0.tar.gz -C $BUILD_DIR
 cd $BUILD_DIR/nginx-1.14.0
-./configure --with-stream --with-debug --prefix=$ROOT_DIR/nginx --add-module=$ROOT_DIR
+./configure --with-stream --with-debug --without-http_rewrite_module --without-http_gzip_module --prefix=$INSTALL_DIR --add-module=$ROOT_DIR
 
 #移除ipv6的支持。
 chmod a+w ./objs/ngx_auto_config.h
