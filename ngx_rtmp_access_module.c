@@ -437,7 +437,6 @@ ngx_rtmp_access_publish(ngx_rtmp_session_t *s, ngx_rtmp_publish_t *v)
         return NGX_ERROR;
     }
 
-next:
     return next_publish(s, v);
 }
 
