@@ -100,7 +100,6 @@ typedef struct {
     unsigned                ipv6only:2;
 #endif
     unsigned                so_keepalive:2;
-    unsigned                proxy_protocol:1;
 #if (NGX_HAVE_KEEPALIVE_TUNABLE)
     int                     tcp_keepidle;
     int                     tcp_keepintvl;
@@ -239,7 +238,6 @@ typedef struct {
     unsigned                ping_reset:1;
 
     /* auto-pushed? */
-    unsigned                auto_pushed:1;
     unsigned                relay:1;
     unsigned                static_relay:1;
 
