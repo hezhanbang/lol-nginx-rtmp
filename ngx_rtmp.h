@@ -56,6 +56,7 @@ typedef struct {
 typedef struct {
     ngx_rtmp_conf_ctx_t    *ctx;
     ngx_str_t               addr_text;
+    unsigned                proxy_protocol:1;
 } ngx_rtmp_addr_conf_t;
 
 typedef struct {
@@ -99,6 +100,7 @@ typedef struct {
     unsigned                ipv6only:2;
 #endif
     unsigned                so_keepalive:2;
+    unsigned                proxy_protocol:1;
 #if (NGX_HAVE_KEEPALIVE_TUNABLE)
     int                     tcp_keepidle;
     int                     tcp_keepintvl;
@@ -122,7 +124,7 @@ typedef struct {
 #define NGX_RTMP_MSG_ACK_SIZE           5
 #define NGX_RTMP_MSG_BANDWIDTH          6
 #define NGX_RTMP_MSG_EDGE               7
-//#define NGX_RTMP_MSG_AUDIO              8
+#define NGX_RTMP_MSG_AUDIO              8
 #define NGX_RTMP_MSG_VIDEO              9
 #define NGX_RTMP_MSG_AMF3_META          15
 #define NGX_RTMP_MSG_AMF3_SHARED        16
@@ -237,6 +239,7 @@ typedef struct {
     unsigned                ping_reset:1;
 
     /* auto-pushed? */
+    unsigned                auto_pushed:1;
     unsigned                relay:1;
     unsigned                static_relay:1;
 
