@@ -7,7 +7,7 @@ cd $ROOT_DIR
 BUILD_DIR=~/buildRtmp
 INSTALL_DIR=$BUILD_DIR/install
 VSCODE_GDB_DIR=$ROOT_DIR
-DEBUG=release
+DEBUG_FLAGS=--with-debug
 ################################################## compile nginx
 compileNginx() {
 	rm -rf $ROOT_DIR/nginx/sbin/*
@@ -25,20 +25,19 @@ do
 		*) value="" ;;
 	esac
 	case "$option" in
-		debug=*) debugOpt="$value" ;;
-		debug=*) debugOpt="$value" ;;
+		release=*) releaseOpt="$value" ;;
 		compileonly=*) compileOpt="$value" ;;
 		compileOnly=*) compileOpt="$value" ;;
 	esac
 done
 
-echo "debugOpt=$debugOpt compileOpt=$compileOpt"
+echo "releaseOpt=$releaseOpt compileOpt=$compileOpt"
 echo "**************************************************"
 sleep 3
 
 ################################################## we compile nginx only and simply
-if [ ! -z $debugOpt ]; then
-	DEBUG=debug
+if [ ! -z $releaseOpt ]; then
+	DEBUG_FLAGS=
 fi
 
 if [ ! -z $compileOpt ]; then
@@ -64,7 +63,7 @@ rm -rf $BUILD_DIR/.heb*
 
 tar zxf ./doc/nginx-1.14.0.tar.gz -C $BUILD_DIR
 cd $BUILD_DIR/nginx-1.14.0
-./configure --with-stream --with-debug --without-http_rewrite_module --without-http_gzip_module --prefix=$INSTALL_DIR --add-module=$ROOT_DIR
+./configure --with-stream $DEBUG_FLAGS --without-http_rewrite_module --without-http_gzip_module --prefix=$INSTALL_DIR --add-module=$ROOT_DIR
 
 #移除ipv6的支持。
 chmod a+w ./objs/ngx_auto_config.h
