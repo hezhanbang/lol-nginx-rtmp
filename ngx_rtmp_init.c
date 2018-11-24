@@ -7,7 +7,6 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include "ngx_rtmp.h"
-#include "ngx_rtmp_proxy_protocol.h"
 
 
 static void ngx_rtmp_close_connection(ngx_connection_t *c);
@@ -134,7 +133,7 @@ ngx_rtmp_init_connection(ngx_connection_t *c)
     s->auto_pushed = unix_socket;
 
     if (addr_conf->proxy_protocol) {
-        ngx_rtmp_proxy_protocol(s);
+        //ngx_rtmp_proxy_protocol(s);
 
     } else {
         ngx_rtmp_handshake(s);
