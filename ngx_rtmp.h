@@ -44,7 +44,6 @@ typedef struct {
     unsigned                ipv6only:2;
 #endif
     unsigned                so_keepalive:2;
-    unsigned                proxy_protocol:1;
 #if (NGX_HAVE_KEEPALIVE_TUNABLE)
     int                     tcp_keepidle;
     int                     tcp_keepintvl;
@@ -56,7 +55,6 @@ typedef struct {
 typedef struct {
     ngx_rtmp_conf_ctx_t    *ctx;
     ngx_str_t               addr_text;
-    unsigned                proxy_protocol:1;
 } ngx_rtmp_addr_conf_t;
 
 typedef struct {
@@ -100,7 +98,6 @@ typedef struct {
     unsigned                ipv6only:2;
 #endif
     unsigned                so_keepalive:2;
-    unsigned                proxy_protocol:1;
 #if (NGX_HAVE_KEEPALIVE_TUNABLE)
     int                     tcp_keepidle;
     int                     tcp_keepintvl;
