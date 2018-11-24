@@ -235,11 +235,6 @@ typedef struct {
     unsigned                ping_active:1;
     unsigned                ping_reset:1;
 
-    /* auto-pushed? */
-    unsigned                auto_pushed:1;
-    unsigned                relay:1;
-    unsigned                static_relay:1;
-
     /* input stream 0 (reserved by RTMP spec)
      * is used as free chain link */
 

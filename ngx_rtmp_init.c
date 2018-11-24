@@ -23,7 +23,6 @@ ngx_rtmp_init_connection(ngx_connection_t *c)
     ngx_rtmp_in_addr_t    *addr;
     ngx_rtmp_session_t    *s;
     ngx_rtmp_addr_conf_t  *addr_conf;
-    ngx_int_t              unix_socket;
 #if (NGX_HAVE_INET6)
     struct sockaddr_in6   *sin6;
     ngx_rtmp_in6_addr_t   *addr6;
@@ -36,7 +35,6 @@ ngx_rtmp_init_connection(ngx_connection_t *c)
     /* AF_INET only */
 
     port = c->listening->servers;
-    unix_socket = 0;
 
     if (port->naddrs > 1) {
 
@@ -77,7 +75,6 @@ ngx_rtmp_init_connection(ngx_connection_t *c)
 #endif
 
         case AF_UNIX:
-            unix_socket = 1;
             /* fall through */
 
         default: /* AF_INET */
@@ -109,7 +106,6 @@ ngx_rtmp_init_connection(ngx_connection_t *c)
 #endif
 
         case AF_UNIX:
-            unix_socket = 1;
             /* fall through */
 
         default: /* AF_INET */
@@ -126,11 +122,6 @@ ngx_rtmp_init_connection(ngx_connection_t *c)
     if (s == NULL) {
         return;
     }
-
-    /* only auto-pushed connections are
-     * done through unix socket */
-
-    s->auto_pushed = unix_socket;
 
     ngx_rtmp_handshake(s);
 }
