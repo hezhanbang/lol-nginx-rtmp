@@ -65,10 +65,12 @@ typedef struct {
     ngx_msec_t                          sync;
     ngx_msec_t                          idle_timeout;
     ngx_flag_t                          atc;
+    ngx_flag_t                          interleave;
     ngx_flag_t                          wait_key;
     ngx_flag_t                          wait_video;
     ngx_flag_t                          publish_notify;
     ngx_flag_t                          play_restart;
+    ngx_flag_t                          idle_streams;
     ngx_msec_t                          buflen;
     ngx_pool_t                         *pool;
     ngx_rtmp_live_stream_t             *free_streams;
