@@ -14,7 +14,6 @@ RTMP_CORE_MODULES="                                         \
 
 RTMP_DEPS="                                                 \
                 $ngx_addon_dir/ngx_rtmp_amf.h               \
-                $ngx_addon_dir/ngx_rtmp_bandwidth.h         \
                 $ngx_addon_dir/ngx_rtmp_cmd_module.h        \
                 $ngx_addon_dir/ngx_rtmp_codec_module.h      \
                 $ngx_addon_dir/ngx_rtmp_eval.h              \
@@ -41,7 +40,6 @@ RTMP_CORE_SRCS="                                            \
                 $ngx_addon_dir/ngx_rtmp_codec_module.c      \
                 $ngx_addon_dir/ngx_rtmp_access_module.c     \
                 $ngx_addon_dir/ngx_rtmp_live_module.c       \
-                $ngx_addon_dir/ngx_rtmp_bandwidth.c         \
                 $ngx_addon_dir/ngx_rtmp_log_module.c        \
                 $ngx_addon_dir/ngx_rtmp_limit_module.c      \
                 $ngx_addon_dir/ngx_rtmp_bitop.c             \
