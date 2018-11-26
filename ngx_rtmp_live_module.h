@@ -12,7 +12,6 @@
 #include <ngx_core.h>
 #include "ngx_rtmp.h"
 #include "ngx_rtmp_cmd_module.h"
-#include "ngx_rtmp_bandwidth.h"
 #include "ngx_rtmp_streams.h"
 
 
@@ -47,10 +46,6 @@ struct ngx_rtmp_live_stream_s {
     u_char                              name[NGX_RTMP_MAX_NAME];
     ngx_rtmp_live_stream_t             *next;
     ngx_rtmp_live_ctx_t                *ctx;
-    ngx_rtmp_bandwidth_t                bw_in;
-    ngx_rtmp_bandwidth_t                bw_in_audio;
-    ngx_rtmp_bandwidth_t                bw_in_video;
-    ngx_rtmp_bandwidth_t                bw_out;
     ngx_msec_t                          epoch;
     unsigned                            active:1;
     unsigned                            publishing:1;
