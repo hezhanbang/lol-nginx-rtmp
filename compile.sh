@@ -75,11 +75,11 @@ compileNginx
 rm -rf $INSTALL_DIR/conf/nginx.conf
 cp $ROOT_DIR/doc/nginx.conf $INSTALL_DIR/conf/
 
-exit
 #设置vscode的gdb配置。
 VSCODE_GDB_DIR=$VSCODE_GDB_DIR/.vscode
 rm -rf $VSCODE_GDB_DIR
 mkdir -p $VSCODE_GDB_DIR
 GDB_CFG_PATH=$VSCODE_GDB_DIR/launch.json
-sed 's|aOut|'"$ROOT_DIR"'/nginx/sbin/nginx|g' < $ROOT_DIR/../doc/vscode.launch.json > $GDB_CFG_PATH
+sed 's|aOut|'"$INSTALL_DIR"'/sbin/nginx|g' < $ROOT_DIR/doc/vscode.launch.json > $GDB_CFG_PATH
 cat $GDB_CFG_PATH
+
