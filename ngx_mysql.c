@@ -18,6 +18,7 @@ ngx_int_t ngx_mysql_query(ngx_cycle_t *cycle, char *sql);
 ngx_int_t ngx_mysql_connect(ngx_cycle_t *cycle);
 ngx_int_t ngx_mysql_read_packet(int sock, u_char *buf, int cap);
 ngx_int_t ngx_mysql_read(int sock, u_char *buf, int cap);
+ngx_int_t ngx_mysql_sha256(u_char *hash, u_char *buf, int len);
 
 
 #define MYSQL_TIMEOUT (3)
@@ -373,4 +374,15 @@ ngx_mysql_read(int sock, u_char *buf, int cap)
     ret = recv(sock, (char*)buf, cap, 0); 
 
     return (ngx_int_t)ret;
+}
+
+ngx_int_t
+ngx_mysql_sha256(u_char *hash, u_char *buf, int len)
+{
+    SHA256_CTX sha256;
+    SHA256_Init(&sha256);
+    SHA256_Update(&sha256, buf, len);
+    SHA256_Final(hash, &sha256);
+
+    return NGX_OK;
 }
