@@ -54,6 +54,52 @@ ngx_module_t  ngx_mysql_module = {
 char *
 ngx_set_mysql_info(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
+    ngx_mysql_conf_t   *mycf = conf;
+    ngx_str_t          *value;
+    u_char             *p;
+    ngx_int_t          n;
+
+    value = cf->args->elts;
+
+    //ip
+    p = ngx_pstrdup(cf->cycle->pool, value+1);
+    if (p == NULL) {
+        return NGX_CONF_ERROR;
+    }
+    mycf->ip.data = p;
+    mycf->ip.len= value[1].len;
+
+    //port
+    n = ngx_atoi(value[2].data, value[2].len);
+    if (n == NGX_ERROR) {
+        return "invalid number";
+    }
+    mycf->port = n;
+
+    //user
+    p = ngx_pstrdup(cf->cycle->pool, value+3);
+    if (p == NULL) {
+        return NGX_CONF_ERROR;
+    }
+    mycf->user.data = p;
+    mycf->user.len= value[3].len;
+
+    //pwd
+    p = ngx_pstrdup(cf->cycle->pool, value+4);
+    if (p == NULL) {
+        return NGX_CONF_ERROR;
+    }
+    mycf->pwd.data = p;
+    mycf->pwd.len= value[4].len;
+
+    //database
+    p = ngx_pstrdup(cf->cycle->pool, value+5);
+    if (p == NULL) {
+        return NGX_CONF_ERROR;
+    }
+    mycf->database.data = p;
+    mycf->database.len= value[5].len;
+
     return NGX_CONF_OK;
 }
 
