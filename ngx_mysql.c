@@ -147,7 +147,16 @@ ngx_mysql_query(ngx_cycle_t *cycle, char *sql)
 ngx_int_t
 ngx_mysql_connect(ngx_cycle_t *cycle)
 {
-    ngx_mysql_conf_t *mycf;
+    ngx_mysql_conf_t   *mycf;
+    int                 ret;
+    int                 sock;
+    char                temp[24];
+    struct sockaddr_in  sin;
+    fd_set              fsetwrite;
+    struct timeval      tv;
+    ngx_int_t           failed = 1;
+    int                 error;
+    socklen_t           len;
 
     mycf = (ngx_mysql_conf_t*)cycle->conf_ctx[ngx_mysql_module.index];
     ngx_log_error(NGX_LOG_INFO, cycle->log, 0, 
@@ -160,23 +169,59 @@ ngx_mysql_connect(ngx_cycle_t *cycle)
         );
 
     //use block socket to connect mysql server.
-    int sock= socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    char temp[24];
+    sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if(sock<0) {
+		ngx_log_error(NGX_LOG_INFO, cycle->log, 0, "fail to create mysql socket");
+        return NGX_ERROR;
+    }
+    if(fcntl(sock, F_SETFL, O_NONBLOCK)==-1){
+		ngx_log_error(NGX_LOG_INFO, cycle->log, 0, "fail to set mysql socket to noblock");
+		goto fail;
+	}
+
     memcpy(temp, mycf->ip.data, mycf->ip.len);
     temp[mycf->ip.len]='\0';
-
-    struct sockaddr_in sin;
+    
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family          = PF_INET;
 	sin.sin_port            = htons((u_short)mycf->port);
 	sin.sin_addr.s_addr     = inet_addr(temp);
 
 	//连接服务器
-	int reVal = connect(sock, (struct sockaddr *)&sin, sizeof(sin));
-	if(0!=reVal) {
-        ngx_log_error(NGX_LOG_INFO, cycle->log, 0, "fail to connect mysql");
-		return NGX_ERROR;
+	ret = connect(sock, (struct sockaddr *)&sin, sizeof(sin));
+	if(0==ret) {
+        failed = 0;
+    } else {
+        //ngx_log_error(NGX_LOG_INFO, cycle->log, 0, "fail to connect mysql");
+
+		tv.tv_sec = 3;
+		tv.tv_usec = 0;
+
+		FD_ZERO(&fsetwrite);
+		FD_SET(sock, &fsetwrite);
+		ret = select(sock+1,NULL,&fsetwrite,NULL, &tv);
+		if (ret<=0) {
+            goto fail;
+        }
+        if(!FD_ISSET(sock, &fsetwrite)) {
+            goto fail;
+        }
+
+		error = 0;
+		len = sizeof(error);
+		getsockopt(sock, SOL_SOCKET, SO_ERROR, (char *)&error, &len);
+		if (0!=error) {
+			goto fail;
+		}
+
+	    failed = 0;
 	}
 
+fail:
+    close(sock);
+    if(failed) {
+		ngx_log_error(NGX_LOG_INFO, cycle->log, 0, "fail to connect mysql");
+        return NGX_ERROR;
+    }
     return NGX_OK;
 }
