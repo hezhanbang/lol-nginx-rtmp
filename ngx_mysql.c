@@ -13,6 +13,7 @@
 char *ngx_set_mysql_info(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static void *ngx_mysql_module_create_conf(ngx_cycle_t *cycle);
 static ngx_int_t ngx_mysql_init_process(ngx_cycle_t *cycle);
+ngx_int_t ngx_mysql_query(ngx_cycle_t *cycle, char *sql);
 
 
 static ngx_command_t  ngx_mysql_commands[] = {
@@ -100,6 +101,9 @@ ngx_set_mysql_info(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     mycf->database.data = p;
     mycf->database.len= value[5].len;
 
+    //connected
+    mycf->connected = 0;
+
     return NGX_CONF_OK;
 }
 
@@ -122,5 +126,27 @@ ngx_mysql_module_create_conf(ngx_cycle_t *cycle)
 static ngx_int_t
 ngx_mysql_init_process(ngx_cycle_t *cycle)
 {
+    //debug only
+    ngx_mysql_query(cycle, "");
+    return NGX_OK;
+}
+
+ngx_int_t ngx_mysql_connect(ngx_cycle_t *cycle, ngx_mysql_conf_t *mycf)
+{
+    ngx_log_error(NGX_LOG_DEBUG, cycle->log, 0, "hebang do ngx_mysql_connect");
+    return NGX_OK;
+}
+
+ngx_int_t
+ngx_mysql_query(ngx_cycle_t *cycle, char *sql)
+{
+    ngx_mysql_conf_t *mycf = (ngx_mysql_conf_t*)cycle->conf_ctx[ngx_mysql_module.index];
+
+    if(0 == mycf->connected) {
+        if(NGX_OK == ngx_mysql_connect(cycle, mycf)){
+            mycf->connected = 1;
+        }
+    }
+
     return NGX_OK;
 }

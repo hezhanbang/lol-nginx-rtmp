@@ -15,6 +15,7 @@ typedef struct {
     ngx_str_t user;
     ngx_str_t pwd;
     ngx_str_t database;
+    ngx_int_t connected;
 } ngx_mysql_conf_t;
 
 
