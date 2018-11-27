@@ -159,5 +159,24 @@ ngx_mysql_connect(ngx_cycle_t *cycle)
         &mycf->database
         );
 
+    //use block socket to connect mysql server.
+    int sock= socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    char temp[24];
+    memcpy(temp, mycf->ip.data, mycf->ip.len);
+    temp[mycf->ip.len]='\0';
+
+    struct sockaddr_in sin;
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family          = PF_INET;
+	sin.sin_port            = htons((u_short)mycf->port);
+	sin.sin_addr.s_addr     = inet_addr(temp);
+
+	//连接服务器
+	int reVal = connect(sock, (struct sockaddr *)&sin, sizeof(sin));
+	if(0!=reVal) {
+        ngx_log_error(NGX_LOG_INFO, cycle->log, 0, "fail to connect mysql");
+		return NGX_ERROR;
+	}
+
     return NGX_OK;
 }
