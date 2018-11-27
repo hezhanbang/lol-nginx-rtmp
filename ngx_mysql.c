@@ -172,7 +172,8 @@ ngx_mysql_connect(ngx_cycle_t *cycle)
     socklen_t           len;
     int                 index;
     int                 pos = 0;
-    u_char              authData[8];
+    u_char              authData[8+12];
+    char                plugin[32];
 
     mycf = (ngx_mysql_conf_t*)cycle->conf_ctx[ngx_mysql_module.index];
     ngx_log_error(NGX_LOG_INFO, cycle->log, 0, 
@@ -230,34 +231,81 @@ ngx_mysql_connect(ngx_cycle_t *cycle)
 	}
 
     // Reading Handshake Initialization Packet
-    ret = ngx_mysql_read_packet(sock, temp, sizeof(temp)-1);
-    if(ret<=0) {
-        goto fail;
-    }
-    if(0xff==temp[0]){
-        error = (int)( (uint32_t)temp[1] | (uint32_t)temp[2]<<8 );
-        ngx_str_t errstr;
-        errstr.data= temp+3;
-        errstr.len=ret-3;
-        ngx_log_error(NGX_LOG_DEBUG, cycle->log, 0, "fail to connect mysql: code=%d msg=\"%V\"", error, &errstr);
-        goto fail;
-    }
-    // protocol version [1 byte]
-	if(temp[0] < 10){
-        goto fail;
-    }
-
-    // server version [null terminated string]
-    // connection id [4 bytes]
-    for(index=1; index< ret-2; index++){
-        if(temp[index]=='\0') {
-            ngx_log_error(NGX_LOG_DEBUG, cycle->log, 0, "mysql version: %s", (char*)temp+1);
-            break;
+    do{
+        ret = ngx_mysql_read_packet(sock, temp, sizeof(temp)-1);
+        if(ret<=0) {
+            goto fail;
         }
-    }
-    pos = index + 1 + 4;
-    // first part of the password cipher [8 bytes]
-	memcpy(authData, temp+pos, 8);
+        if(0xff==temp[0]){
+            error = (int)( (uint32_t)temp[1] | (uint32_t)temp[2]<<8 );
+            ngx_str_t errstr;
+            errstr.data= temp+3;
+            errstr.len=ret-3;
+            ngx_log_error(NGX_LOG_DEBUG, cycle->log, 0, "fail to connect mysql: code=%d msg=\"%V\"", error, &errstr);
+            goto fail;
+        }
+        // protocol version [1 byte]
+        if(temp[0] < 10){
+            goto fail;
+        }
+
+        // server version [null terminated string]
+        // connection id [4 bytes]
+        for(index=1; index< ret-2; index++){
+            if(temp[index]=='\0') {
+                ngx_log_error(NGX_LOG_DEBUG, cycle->log, 0, "mysql version: %s", (char*)temp+1);
+                break;
+            }
+        }
+        pos = index + 1 + 4;
+        // first part of the password cipher [8 bytes]
+        memcpy(authData, temp+pos, 8);
+        // (filler) always 0x00 [1 byte]
+        pos += 8 + 1;
+        // capability flags (lower 2 bytes) [2 bytes]
+        pos+=2;
+
+        if(ret>pos){
+            // character set [1 byte]
+            // status flags [2 bytes]
+            // capability flags (upper 2 bytes) [2 bytes]
+            // length of auth-plugin-data [1 byte]
+            // reserved (all [00]) [10 bytes]
+            pos += 1 + 2 + 2 + 1 + 10;
+            memcpy(authData+8, temp+pos, 12);
+            pos += 13;
+
+            // EOF if version (>= 5.5.7 and < 5.5.10) or (>= 5.6.0 and < 5.6.2)
+            // \NUL otherwise
+            for(index=pos; index<ret; index++) {
+                if(temp[index]=='\0'){
+                    break;
+                }
+            }
+            if(index<ret){
+                    strcpy(plugin, (char*)temp+pos);
+            }else{
+                memcpy(plugin, (char*)temp+pos, ret-pos);
+                plugin[ret-pos]='\0';
+            }
+            if(plugin[0]=='\0'){
+                strcpy(plugin, "mysql_native_password");
+            }
+        }
+    }while(0);
+
+    // Send Client Authentication Packet
+    do{
+        if(memcmp(plugin, "caching_sha2_password", 22)==0){
+
+        }else if(memcmp(plugin, "sha256_password", 16)==0){
+
+        }else if(memcmp(plugin, "mysql_native_password", 22)==0){
+
+        }else{
+            ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "unknown auth plugin:%s", plugin);
+        }
+    }while(0);
 
 fail:
     close(sock);
