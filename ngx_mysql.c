@@ -197,39 +197,42 @@ ngx_mysql_connect(ngx_cycle_t *cycle)
 		goto fail;
 	}
 
-    memcpy(temp, mycf->ip.data, mycf->ip.len);
-    temp[mycf->ip.len]='\0';
-    
-	memset(&sin, 0, sizeof(sin));
-	sin.sin_family          = PF_INET;
-	sin.sin_port            = htons((u_short)mycf->port);
-	sin.sin_addr.s_addr     = inet_addr((char*)temp);
+    //connect
+    do{
+        memcpy(temp, mycf->ip.data, mycf->ip.len);
+        temp[mycf->ip.len]='\0';
+        
+        memset(&sin, 0, sizeof(sin));
+        sin.sin_family          = PF_INET;
+        sin.sin_port            = htons((u_short)mycf->port);
+        sin.sin_addr.s_addr     = inet_addr((char*)temp);
 
-	//连接服务器
-	ret = connect(sock, (struct sockaddr *)&sin, sizeof(sin));
-	if(0!=ret) {
-        //ngx_log_error(NGX_LOG_INFO, cycle->log, 0, "fail to connect mysql");
+        //连接服务器
+        ret = connect(sock, (struct sockaddr *)&sin, sizeof(sin));
+        if(0!=ret) {
+            //ngx_log_error(NGX_LOG_INFO, cycle->log, 0, "fail to connect mysql");
 
-		tv.tv_sec = MYSQL_TIMEOUT;
-		tv.tv_usec = 0;
+            tv.tv_sec = MYSQL_TIMEOUT;
+            tv.tv_usec = 0;
 
-		FD_ZERO(&fsetwrite);
-		FD_SET(sock, &fsetwrite);
-		ret = select(sock+1,NULL,&fsetwrite,NULL, &tv);
-		if (ret<=0) {
-            goto fail;
+            FD_ZERO(&fsetwrite);
+            FD_SET(sock, &fsetwrite);
+            ret = select(sock+1,NULL,&fsetwrite,NULL, &tv);
+            if (ret<=0) {
+                goto fail;
+            }
+            if(!FD_ISSET(sock, &fsetwrite)) {
+                goto fail;
+            }
+
+            error = 0;
+            len = sizeof(error);
+            getsockopt(sock, SOL_SOCKET, SO_ERROR, (char *)&error, &len);
+            if (0!=error) {
+                goto fail;
+            }
         }
-        if(!FD_ISSET(sock, &fsetwrite)) {
-            goto fail;
-        }
-
-		error = 0;
-		len = sizeof(error);
-		getsockopt(sock, SOL_SOCKET, SO_ERROR, (char *)&error, &len);
-		if (0!=error) {
-			goto fail;
-		}
-	}
+    }while(0);
 
     // Reading Handshake Initialization Packet
     do{
