@@ -10,11 +10,20 @@
 #include <nginx.h>
 #include "ngx_mysql.h"
 
+
 char *ngx_set_mysql_info(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static void *ngx_mysql_module_create_conf(ngx_cycle_t *cycle);
 static ngx_int_t ngx_mysql_init_process(ngx_cycle_t *cycle);
 ngx_int_t ngx_mysql_query(ngx_cycle_t *cycle, char *sql);
 ngx_int_t ngx_mysql_connect(ngx_cycle_t *cycle);
+ngx_int_t ngx_mysql_read_packet(int sock, u_char *buf, int cap);
+ngx_int_t ngx_mysql_read(int sock, u_char *buf, int cap);
+
+
+#define MYSQL_TIMEOUT (3)
+
+
+ngx_mysql_ctx_t ngx_mysql_connection;
 
 
 static ngx_command_t  ngx_mysql_commands[] = {
@@ -120,6 +129,10 @@ ngx_mysql_module_create_conf(ngx_cycle_t *cycle)
     }
 
     mycf->port = NGX_CONF_UNSET;
+
+    //init mysql connection.
+    ngx_mysql_connection.sequence = 0;
+
     return mycf;
 }
 
@@ -150,13 +163,16 @@ ngx_mysql_connect(ngx_cycle_t *cycle)
     ngx_mysql_conf_t   *mycf;
     int                 ret;
     int                 sock;
-    char                temp[24];
+    u_char              temp[255];
     struct sockaddr_in  sin;
     fd_set              fsetwrite;
     struct timeval      tv;
     ngx_int_t           failed = 1;
     int                 error;
     socklen_t           len;
+    int                 index;
+    int                 pos = 0;
+    u_char              authData[8];
 
     mycf = (ngx_mysql_conf_t*)cycle->conf_ctx[ngx_mysql_module.index];
     ngx_log_error(NGX_LOG_INFO, cycle->log, 0, 
@@ -185,16 +201,14 @@ ngx_mysql_connect(ngx_cycle_t *cycle)
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family          = PF_INET;
 	sin.sin_port            = htons((u_short)mycf->port);
-	sin.sin_addr.s_addr     = inet_addr(temp);
+	sin.sin_addr.s_addr     = inet_addr((char*)temp);
 
 	//连接服务器
 	ret = connect(sock, (struct sockaddr *)&sin, sizeof(sin));
-	if(0==ret) {
-        failed = 0;
-    } else {
+	if(0!=ret) {
         //ngx_log_error(NGX_LOG_INFO, cycle->log, 0, "fail to connect mysql");
 
-		tv.tv_sec = 3;
+		tv.tv_sec = MYSQL_TIMEOUT;
 		tv.tv_usec = 0;
 
 		FD_ZERO(&fsetwrite);
@@ -213,9 +227,37 @@ ngx_mysql_connect(ngx_cycle_t *cycle)
 		if (0!=error) {
 			goto fail;
 		}
-
-	    failed = 0;
 	}
+
+    // Reading Handshake Initialization Packet
+    ret = ngx_mysql_read_packet(sock, temp, sizeof(temp)-1);
+    if(ret<=0) {
+        goto fail;
+    }
+    if(0xff==temp[0]){
+        error = (int)( (uint32_t)temp[1] | (uint32_t)temp[2]<<8 );
+        ngx_str_t errstr;
+        errstr.data= temp+3;
+        errstr.len=ret-3;
+        ngx_log_error(NGX_LOG_DEBUG, cycle->log, 0, "fail to connect mysql: code=%d msg=\"%V\"", error, &errstr);
+        goto fail;
+    }
+    // protocol version [1 byte]
+	if(temp[0] < 10){
+        goto fail;
+    }
+
+    // server version [null terminated string]
+    // connection id [4 bytes]
+    for(index=1; index< ret-2; index++){
+        if(temp[index]=='\0') {
+            ngx_log_error(NGX_LOG_DEBUG, cycle->log, 0, "mysql version: %s", (char*)temp+1);
+            break;
+        }
+    }
+    pos = index + 1 + 4;
+    // first part of the password cipher [8 bytes]
+	memcpy(authData, temp+pos, 8);
 
 fail:
     close(sock);
@@ -224,4 +266,63 @@ fail:
         return NGX_ERROR;
     }
     return NGX_OK;
+}
+
+
+ngx_int_t
+ngx_mysql_read_packet(int sock, u_char *buf, int cap)
+{
+    int         pktLen;
+    int         ret;
+    int         got;
+
+    // read packet header
+    if(4 != ngx_mysql_read(sock, buf, 4)) {
+        return NGX_ERROR;
+    }
+    // packet length [24 bit]
+	pktLen = (int)( (uint32_t)(buf[0]) | ((uint32_t)(buf[1]))<<8 | ((uint32_t)(buf[2]))<<16);
+    // check packet sync [8 bit]
+    if(buf[3] != ngx_mysql_connection.sequence) {
+        return NGX_ERROR;
+    }
+    ngx_mysql_connection.sequence++;
+
+    if(0==pktLen) {
+        return 4;
+    }
+    // read packet body [pktLen bytes]
+    got = 0;
+    for(; got < pktLen;){
+        ret = ngx_mysql_read(sock, buf + got, cap - got);
+        if(ret<=0){
+            return NGX_ERROR;
+        }
+        got += ret;
+    }
+
+    return got;
+}
+
+
+ngx_int_t
+ngx_mysql_read(int sock, u_char *buf, int cap)
+{
+	int             ret;
+	fd_set          fsetread;
+	struct timeval  tv;
+
+    tv.tv_sec = MYSQL_TIMEOUT;
+    tv.tv_usec = 0;
+
+    FD_ZERO(&fsetread);
+    FD_SET(sock, &fsetread);
+    ret=select(sock+1, &fsetread, NULL, NULL, &tv);
+
+    if(ret<=0) {
+        return NGX_ERROR;
+    }
+    ret = recv(sock, (char*)buf, cap, 0); 
+
+    return (ngx_int_t)ret;
 }

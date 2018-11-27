@@ -18,5 +18,8 @@ typedef struct {
     ngx_int_t connected;
 } ngx_mysql_conf_t;
 
+typedef struct {
+    uint8_t sequence;
+} ngx_mysql_ctx_t;
 
 #endif /* _NGX_RTMP_H_INCLUDED_ */
