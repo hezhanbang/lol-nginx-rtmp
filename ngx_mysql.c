@@ -371,12 +371,10 @@ ngx_mysql_connect(ngx_cycle_t *cycle)
             unsigned char hash[SHA_DIGEST_LENGTH];
             unsigned char hash2[SHA_DIGEST_LENGTH+64];
 
-            u_char ddd[]={ 0x22, 0x53, 0x6c, 0x4d, 0x7a, 0x2b, 0x01, 0x58, 0x76, 0x6d, 0x54, 0x23, 0x1c, 0x6f, 0x01, 0x0c, 0x52, 0x1d, 0x5b, 0x05 };
-
-            // stage1Hash = SHA1(password)
-            // scrambleHash = SHA1(scramble + SHA1(stage1Hash))
-            memcpy(hash2, ddd, 20);
-            ngx_mysql_sha1(hash2 + 20, mycf->pwd.data, mycf->pwd.len);
+            // scrambleHash = SHA1(scramble + SHA1(SHA1(password)))
+            ngx_mysql_sha1(hash, mycf->pwd.data, mycf->pwd.len); //SHA1(password)
+            ngx_mysql_sha1(hash2+20, hash, SHA_DIGEST_LENGTH);   //SHA1(SHA1(password))
+            memcpy(hash2, authData, 20);     //scramble + SHA1(SHA1(password))
             ngx_mysql_sha1(hash, hash2, 20 + SHA_DIGEST_LENGTH);
 
             // stage1Hash = SHA1(password)
