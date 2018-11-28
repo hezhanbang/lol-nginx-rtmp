@@ -20,37 +20,37 @@ ngx_int_t ngx_mysql_write_packet(int sock, u_char *data, int len);
 ngx_int_t ngx_mysql_read_packet(int sock, u_char *buf, int cap);
 ngx_int_t ngx_mysql_read(int sock, u_char *buf, int cap);
 ngx_int_t ngx_mysql_sha256(u_char *hash, u_char *buf, int len);
+ngx_int_t ngx_mysql_sha1(u_char *hash, u_char *buf, int len);
 
 
 #define MYSQL_TIMEOUT (3)
 
-enum clientFlagType {
-	clientLongPassword=1,
-	clientFoundRows,
-	clientLongFlag,
-	clientConnectWithDB,
-	clientNoSchema,
-	clientCompress,
-	clientODBC,
-	clientLocalFiles,
-	clientIgnoreSpace,
-	clientProtocol41,
-	clientInteractive,
-	clientSSL,
-	clientIgnoreSIGPIPE,
-	clientTransactions,
-	clientReserved,
-	clientSecureConn,
-	clientMultiStatements,
-	clientMultiResults,
-	clientPSMultiResults,
-	clientPluginAuth,
-	clientConnectAttrs,
-	clientPluginAuthLenEncClientData,
-	clientCanHandleExpiredPasswords,
-	clientSessionTrack,
-	clientDeprecateEOF
-};
+#define clientLongPassword                  (0x1<<0)
+#define clientFoundRows                     (0x1<<1)
+#define clientLongFlag                      (0x1<<2)
+#define clientConnectWithDB                 (0x1<<3)
+#define clientNoSchema                      (0x1<<4)
+#define clientCompress                      (0x1<<5)
+#define clientODBC                          (0x1<<6)
+#define clientLocalFiles                    (0x1<<7)
+#define clientIgnoreSpace                   (0x1<<8)
+#define clientProtocol41                    (0x1<<9)
+#define clientInteractive                   (0x1<<10)
+#define clientSSL                           (0x1<<11)
+#define clientIgnoreSIGPIPE                 (0x1<<12)
+#define clientTransactions                  (0x1<<13)
+#define clientReserved                      (0x1<<14)
+#define clientSecureConn                    (0x1<<15)
+#define clientMultiStatements               (0x1<<16)
+#define clientMultiResults                  (0x1<<17)
+#define clientPSMultiResults                (0x1<<18)
+#define clientPluginAuth                    (0x1<<19)
+#define clientConnectAttrs                  (0x1<<20)
+#define clientPluginAuthLenEncClientData    (0x1<<21)
+#define clientCanHandleExpiredPasswords     (0x1<<22)
+#define clientSessionTrack                  (0x1<<23)
+#define clientDeprecateEOF                  (0x1<<24)
+
 
 ngx_mysql_ctx_t ngx_mysql_connection;
 
@@ -298,7 +298,7 @@ ngx_mysql_connect(ngx_cycle_t *cycle)
         // (filler) always 0x00 [1 byte]
         pos += 8 + 1;
         // capability flags (lower 2 bytes) [2 bytes]
-        flags = (uint32_t)temp[pos] | (uint32_t)temp[pos+1]<<8;
+        flags = (uint32_t)temp[pos] | (uint32_t)(temp[pos+1]<<8);
         //check clientProtocol41
         if((flags & clientProtocol41) == 0){
             goto fail;
@@ -368,7 +368,23 @@ ngx_mysql_connect(ngx_cycle_t *cycle)
         }else if(memcmp(plugin, "sha256_password", 16)==0){
 
         }else if(memcmp(plugin, "mysql_native_password", 22)==0){
+            unsigned char hash[SHA_DIGEST_LENGTH];
+            unsigned char hash2[SHA_DIGEST_LENGTH+64];
 
+            // stage1Hash = SHA1(password)
+            // scrambleHash = SHA1(scramble + SHA1(stage1Hash))
+            memcpy(hash2, authData, 20);
+            ngx_mysql_sha1(hash2 + 20, mycf->pwd.data, mycf->pwd.len);
+            ngx_mysql_sha1(hash, hash2, 20 + SHA_DIGEST_LENGTH);
+
+            // stage1Hash = SHA1(password)
+            ngx_mysql_sha1(hash2, mycf->pwd.data, mycf->pwd.len);
+
+            // token = scrambleHash XOR stage1Hash
+            for(index=0; index<SHA_DIGEST_LENGTH; index++) {
+                authResp[index] = hash2[index] ^ hash[index];
+            }
+            authRespLen=SHA_DIGEST_LENGTH;
         }else{
             ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "unknown auth plugin:%s", plugin);
             goto fail;
@@ -411,6 +427,7 @@ ngx_mysql_connect(ngx_cycle_t *cycle)
         }
 
         pktLen = 4 + 4 + 1 + 23 + mycf->user.len + 1 + markSize + authRespLen + 21 + 1;
+
         // To specify a db name
 		flags |= clientConnectWithDB;
 		pktLen += mycf->dbName.len + 1;
@@ -466,7 +483,31 @@ ngx_mysql_connect(ngx_cycle_t *cycle)
 
     // Handle response to auth packet, switch methods if possible
     do{
-        
+        ret = ngx_mysql_read_packet(sock, temp, sizeof(temp)-1);
+        if(ret<=0) {
+            goto fail;
+        }
+        if(0==temp[0]){ //ok package
+
+        } else if(255==temp[0]) { //err pakcage
+            // Error Number [16 bit uint]
+	        //errno := binary.LittleEndian.Uint16(data[1:3])
+            error = (int)( (uint32_t)temp[1] | (uint32_t)temp[2]<<8 );
+
+            pos=3;
+            // SQL State [optional: # + 5bytes string]
+            if(temp[3] == 0x23) {
+                //sqlstate := string(data[4 : 4+5])
+                pos = 9;
+            }
+
+            ngx_str_t errstr;
+            errstr.data= temp+pos;
+            errstr.len=ret-pos;
+            ngx_log_error(NGX_LOG_DEBUG, cycle->log, 0, "fail to auth mysql: code=%d msg=\"%V\"", error, &errstr);
+            goto fail;
+        }
+
     }while(0);
     failed = 0;
 
@@ -559,6 +600,7 @@ ngx_mysql_read(int sock, u_char *buf, int cap)
     return (ngx_int_t)ret;
 }
 
+
 ngx_int_t
 ngx_mysql_sha256(u_char *hash, u_char *buf, int len)
 {
@@ -566,6 +608,18 @@ ngx_mysql_sha256(u_char *hash, u_char *buf, int len)
     SHA256_Init(&sha256);
     SHA256_Update(&sha256, buf, len);
     SHA256_Final(hash, &sha256);
+
+    return NGX_OK;
+}
+
+
+ngx_int_t
+ngx_mysql_sha1(u_char *hash, u_char *buf, int len)
+{
+    SHA_CTX sha1;
+    SHA1_Init(&sha1);
+    SHA1_Update(&sha1, buf, len);
+    SHA1_Final(hash, &sha1);
 
     return NGX_OK;
 }
