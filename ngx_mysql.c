@@ -214,6 +214,51 @@ ngx_mysql_free_peer(ngx_peer_connection_t *pc, void *data,
 }
 
 
+ngx_int_t
+ngx_mysql_read_packet(ngx_connection_t *cc, ngx_event_t *rev)
+{
+    ngx_buf_t  *b;
+    ngx_int_t   n;
+    int         pktLen;
+    int         ret;
+    int         got;
+    u_char     *data;
+
+    b = ngx_mysql_connection.in->buf;
+    n = cc->recv(cc, b->last, b->end - b->last);
+    if (n == NGX_ERROR || n == 0) {
+        ngx_mysql_connect_close(cc);
+        return NGX_ERROR;
+    }
+     if (n == NGX_AGAIN) {
+        ngx_add_timer(rev, ngx_mysql_connection.timeout);
+        if (ngx_handle_read_event(rev, 0) != NGX_OK) {
+            ngx_rtmp_netcall_close(cc);
+        }
+        return NGX_OK;
+    }
+
+    if(n<4){
+        return NGX_ERROR;
+    }
+    data=b->pos;
+
+    // packet length [24 bit]
+	pktLen = (int)( (uint32_t)(data[0]) | ((uint32_t)(data[1]))<<8 | ((uint32_t)(data[2]))<<16);
+    // check packet sync [8 bit]
+    if(data[3] != ngx_mysql_connection.sequence) {
+        return NGX_ERROR;
+    }
+    ngx_mysql_connection.sequence++;
+
+    if(n < 4+ pktLen){
+        return NGX_ERROR;
+    }
+    b->last = b->pos + 4 + pktLen;
+    return NGX_OK;
+}
+
+
 void
 ngx_mysql_connect_close(ngx_connection_t *cc)
 {
@@ -261,15 +306,11 @@ ngx_mysql_recv_init_package(ngx_event_t *rev)
         ngx_del_timer(rev);
     }
 
-    b = ngx_mysql_connection.in->buf;
-    n = cc->recv(cc, b->last, b->end - b->last);
-    if(n<5) {
+    if(NGX_OK != ngx_mysql_read_packet(cc, rev)){
         ngx_mysql_connect_close(cc);
         return;
     }
     //got package now
-
-    
 }
 
 
@@ -296,6 +337,7 @@ ngx_mysql_connect()
         &mycf->dbName
         );
 
+    ngx_mysql_connection.sequence=0;
     //create pool
     ngx_mysql_connection.pool = ngx_create_pool(4096, ngx_cycle->log);
     if (ngx_mysql_connection.pool == NULL) {
