@@ -52,6 +52,38 @@ ngx_int_t ngx_mysql_sha1(u_char *hash, u_char *buf, int len);
 #define clientDeprecateEOF                  (0x1<<24)
 
 
+enum cmdType {
+	comQuit = 1,
+	comInitDB,
+	comQuery,
+	comFieldList,
+	comCreateDB,
+	comDropDB,
+	comRefresh,
+	comShutdown,
+	comStatistics,
+	comProcessInfo,
+	comConnect,
+	comProcessKill,
+	comDebug,
+	comPing,
+	comTime,
+	comDelayedInsert,
+	comChangeUser,
+	comBinlogDump,
+	comTableDump,
+	comConnectOut,
+	comRegisterSlave,
+	comStmtPrepare,
+	comStmtExecute,
+	comStmtSendLongData,
+	comStmtClose,
+	comStmtReset,
+	comSetOption,
+	comStmtFetch
+};
+
+
 ngx_mysql_ctx_t ngx_mysql_connection;
 
 
