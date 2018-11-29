@@ -282,7 +282,10 @@ ngx_mysql_dummy_send(ngx_event_t *wev)
 void
 ngx_mysql_recv_init_package(ngx_event_t *rev)
 {
-    ngx_connection_t                 *cc;
+    ngx_connection_t           *cc;
+    u_char                     *data;     
+    int                         error, index, pos, len;
+    int                         ok = 0;
 
     cc = rev->data;
 
@@ -292,8 +295,7 @@ ngx_mysql_recv_init_package(ngx_event_t *rev)
 
     if (rev->timedout) {
         cc->timedout = 1;
-        ngx_mysql_connect_close(cc);
-        return;
+        goto fail;
     }
 
     if (rev->timer_set) {
@@ -301,10 +303,81 @@ ngx_mysql_recv_init_package(ngx_event_t *rev)
     }
 
     if(NGX_OK != ngx_mysql_read_packet(cc, rev)){
-        ngx_mysql_connect_close(cc);
-        return;
+        goto fail;
     }
     //got package now
+    data = ngx_mysql_connection.in->buf->pos + 4;
+    len = ngx_mysql_connection.in->buf->last - data;
+
+    if(0xff==data[0]){
+        ngx_str_t errstr;
+        error = (int)( (uint32_t)data[1] | (uint32_t)data[2]<<8 );
+        errstr.data= data+3;
+        errstr.len=len-3;
+        ngx_log_error(NGX_LOG_DEBUG, ngx_cycle->log, 0, "fail to connect mysql: code=%d msg=\"%V\"", error, &errstr);
+        goto fail;
+    }
+    // protocol version [1 byte]
+    if(data[0] < 10){
+        goto fail;
+    }
+
+    // server version [null terminated string]
+    // connection id [4 bytes]
+    for(index=1; index< len-2; index++){
+        if(data[index]=='\0') {
+            ngx_log_error(NGX_LOG_DEBUG, ngx_cycle->log, 0, "mysql version: %s", (char*)data+1);
+            break;
+        }
+    }
+    pos = index + 1 + 4;
+    // first part of the password cipher [8 bytes]
+    memcpy(ngx_mysql_connection.authData, data+pos, 8);
+    ngx_mysql_connection.authLen=8;
+    // (filler) always 0x00 [1 byte]
+    pos += 8 + 1;
+    // capability flags (lower 2 bytes) [2 bytes]
+    ngx_mysql_connection.flags = (uint32_t)data[pos] | (uint32_t)(data[pos+1]<<8);
+    //check clientProtocol41
+    if((ngx_mysql_connection.flags & clientProtocol41) == 0){
+        goto fail;
+    }
+    pos+=2;
+
+    if(len>pos){
+        // character set [1 byte]
+        // status flags [2 bytes]
+        // capability flags (upper 2 bytes) [2 bytes]
+        // length of auth-plugin-data [1 byte]
+        // reserved (all [00]) [10 bytes]
+        pos += 1 + 2 + 2 + 1 + 10;
+        memcpy(ngx_mysql_connection.authData+8, data+pos, 12);
+        ngx_mysql_connection.authLen+=12;
+        pos += 13;
+
+        // EOF if version (>= 5.5.7 and < 5.5.10) or (>= 5.6.0 and < 5.6.2)
+        // \NUL otherwise
+        for(index=pos; index<len; index++) {
+            if(data[index]=='\0'){
+                break;
+            }
+        }
+        if(index<len){
+                strcpy(ngx_mysql_connection.plugin, (char*)data+pos);
+        }else{
+            memcpy(ngx_mysql_connection.plugin, (char*)data+pos, len-pos);
+            ngx_mysql_connection.plugin[len-pos]='\0';
+        }
+        if(ngx_mysql_connection.plugin[0]=='\0'){
+            strcpy(ngx_mysql_connection.plugin, "mysql_native_password");
+        }
+    }
+
+    ok = 1;
+fail:
+    if(!ok) {
+        ngx_mysql_connect_close(cc);
+    }
 }
 
 
@@ -315,7 +388,7 @@ ngx_mysql_connect()
     ngx_int_t                rc;
     ngx_peer_connection_t   *pc;
     ngx_connection_t        *cc;
-    u_char                   temp[32];
+    u_char                   data[32];
     int                      ok = 0;
     ngx_url_t               *url;
     int                      len;
@@ -343,10 +416,10 @@ ngx_mysql_connect()
     if (url == NULL) {
         goto error;
     }
-    len = ngx_sprintf(temp, "%V:%d", &mycf->ip, mycf->port) - temp;
+    len = ngx_sprintf(data, "%V:%d", &mycf->ip, mycf->port) - data;
 
     url->url.len = len;
-    url->url.data = temp;
+    url->url.data = data;
     url->default_port = 3306;
     url->uri_part = 1;
 

@@ -25,6 +25,12 @@ typedef struct {
     ngx_int_t           timeout;
     ngx_chain_t        *in;
     ngx_chain_t        *out;
+
+    //handshake
+    uint32_t            flags;
+    u_char              authData[8+12];
+    int                 authLen;
+    char                plugin[32];
 } ngx_mysql_ctx_t;
 
 ngx_int_t ngx_mysql_connect();
