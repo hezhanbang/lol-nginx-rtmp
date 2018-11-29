@@ -16,6 +16,7 @@ static void *ngx_mysql_module_create_conf(ngx_cycle_t *cycle);
 static ngx_int_t ngx_mysql_init_process(ngx_cycle_t *cycle);
 ngx_int_t ngx_mysql_query(ngx_cycle_t *cycle, char *sql);
 ngx_int_t ngx_mysql_connect(ngx_cycle_t *cycle);
+ngx_int_t ngx_mysql_writeCommandPacketStr(cmdType cmdType, char* cmdStr);
 ngx_int_t ngx_mysql_write_packet(int sock, u_char *data, int len);
 ngx_int_t ngx_mysql_read_packet(int sock, u_char *buf, int cap);
 ngx_int_t ngx_mysql_read(int sock, u_char *buf, int cap);
@@ -192,6 +193,7 @@ ngx_mysql_module_create_conf(ngx_cycle_t *cycle)
     mycf->port = NGX_CONF_UNSET;
 
     //init mysql connection.
+    ngx_mysql_connection.sock = -1;
     ngx_mysql_connection.sequence = 0;
 
     return mycf;
@@ -258,6 +260,7 @@ ngx_mysql_connect(ngx_cycle_t *cycle)
 		ngx_log_error(NGX_LOG_INFO, cycle->log, 0, "fail to set mysql socket to noblock");
 		goto fail;
 	}
+    ngx_mysql_connection.sock=sock;
 
     //connect
     do{
@@ -553,6 +556,27 @@ fail:
         return NGX_ERROR;
     }
     return NGX_OK;
+}
+
+
+ngx_int_t
+ngx_mysql_writeCommandPacketStr(cmdType cmdType, char* cmdStr)
+{
+    int         pktLen;
+    u_char      data[128];
+
+    // Reset Packet Sequence
+	ngx_mysql_connection.sequence = 0;
+	pktLen = 1 + strlen(cmdStr)
+
+	// Add command byte
+	data[4] = cmdType;
+
+	// Add arg
+	strcpy(data+5, cmdStr);
+
+	// Send CMD packet
+	return mc.writePacket(ngx_mysql_connection.sock, data, pktLen + 4);
 }
 
 
