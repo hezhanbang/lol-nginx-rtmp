@@ -19,8 +19,9 @@ typedef struct {
 } ngx_mysql_conf_t;
 
 typedef struct {
-    int     sock;
-    uint8_t sequence;
+    int         sock;
+    uint8_t     sequence;
+    ngx_pool_t  *pool;
 } ngx_mysql_ctx_t;
 
 #endif /* _NGX_RTMP_H_INCLUDED_ */
