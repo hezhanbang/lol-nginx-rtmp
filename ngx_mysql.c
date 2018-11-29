@@ -489,22 +489,25 @@ ngx_mysql_connect(ngx_cycle_t *cycle)
         }
         if(0==temp[0]){ //ok package
 
-        } else if(255==temp[0]) { //err pakcage
-            // Error Number [16 bit uint]
-	        //errno := binary.LittleEndian.Uint16(data[1:3])
-            error = (int)( (uint32_t)temp[1] | (uint32_t)temp[2]<<8 );
+        } else {
+            if(255==temp[0]) { //err pakcage
+                // Error Number [16 bit uint]
+                //errno := binary.LittleEndian.Uint16(data[1:3])
+                error = (int)( (uint32_t)temp[1] | (uint32_t)temp[2]<<8 );
 
-            pos=3;
-            // SQL State [optional: # + 5bytes string]
-            if(temp[3] == 0x23) {
-                //sqlstate := string(data[4 : 4+5])
-                pos = 9;
+                pos=3;
+                // SQL State [optional: # + 5bytes string]
+                if(temp[3] == 0x23) {
+                    //sqlstate := string(data[4 : 4+5])
+                    pos = 9;
+                }
+
+                ngx_str_t errstr;
+                errstr.data= temp+pos;
+                errstr.len=ret-pos;
+                ngx_log_error(NGX_LOG_DEBUG, cycle->log, 0, "fail to auth mysql: code=%d msg=\"%V\"", error, &errstr);
             }
-
-            ngx_str_t errstr;
-            errstr.data= temp+pos;
-            errstr.len=ret-pos;
-            ngx_log_error(NGX_LOG_DEBUG, cycle->log, 0, "fail to auth mysql: code=%d msg=\"%V\"", error, &errstr);
+            ngx_log_error(NGX_LOG_DEBUG, cycle->log, 0, "fail to auth mysql: code=%d", (int32_t)temp[0]);
             goto fail;
         }
 
