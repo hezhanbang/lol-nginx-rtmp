@@ -8,7 +8,6 @@ RTMP_CORE_MODULES="                                         \
                 ngx_rtmp_access_module                      \
                 ngx_rtmp_live_module                        \
                 ngx_rtmp_log_module                         \
-                ngx_rtmp_limit_module                       \
                 ngx_mysql_module                            \
                 "
 
@@ -43,7 +42,6 @@ RTMP_CORE_SRCS="                                            \
                 $ngx_addon_dir/ngx_rtmp_access_module.c     \
                 $ngx_addon_dir/ngx_rtmp_live_module.c       \
                 $ngx_addon_dir/ngx_rtmp_log_module.c        \
-                $ngx_addon_dir/ngx_rtmp_limit_module.c      \
                 $ngx_addon_dir/ngx_rtmp_bitop.c             \
                 $ngx_addon_dir/ngx_mysql.c                  \
                 "

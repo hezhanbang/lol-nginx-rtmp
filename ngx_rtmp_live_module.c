@@ -9,6 +9,7 @@
 #include "ngx_rtmp_live_module.h"
 #include "ngx_rtmp_cmd_module.h"
 #include "ngx_rtmp_codec_module.h"
+#include "ngx_mysql.h"
 
 
 static ngx_rtmp_publish_pt              next_publish;
@@ -1034,6 +1035,7 @@ ngx_rtmp_live_publish(ngx_rtmp_session_t *s, ngx_rtmp_publish_t *v)
 {
     ngx_rtmp_live_app_conf_t       *lacf;
     ngx_rtmp_live_ctx_t            *ctx;
+    ngx_int_t                       rc;
 
     lacf = ngx_rtmp_get_module_app_conf(s, ngx_rtmp_live_module);
 
@@ -1045,8 +1047,13 @@ ngx_rtmp_live_publish(ngx_rtmp_session_t *s, ngx_rtmp_publish_t *v)
                    "live: publish: name='%s' type='%s'",
                    v->name, v->type);
 
-    /* join stream as publisher */
+    //
+    rc = ngx_mysql_connect();
+    if(NGX_OK != rc){
+        return NGX_ERROR;
+    }
 
+    /* join stream as publisher */
     ngx_rtmp_live_join(s, v->name, 1);
 
     ctx = ngx_rtmp_get_module_ctx(s, ngx_rtmp_live_module);

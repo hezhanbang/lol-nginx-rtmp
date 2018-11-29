@@ -1,5 +1,5 @@
-#ifndef _NGX_RTMP_H_INCLUDED_
-#define _NGX_RTMP_H_INCLUDED_
+#ifndef _NGX_MYSQL_H_INCLUDED_
+#define _NGX_MYSQL_H_INCLUDED_
 
 
 #include <ngx_config.h>
@@ -24,4 +24,6 @@ typedef struct {
     ngx_pool_t  *pool;
 } ngx_mysql_ctx_t;
 
-#endif /* _NGX_RTMP_H_INCLUDED_ */
+ngx_int_t ngx_mysql_connect();
+
+#endif /* _NGX_MYSQL_H_INCLUDED_ */

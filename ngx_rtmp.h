@@ -580,6 +580,7 @@ ngx_int_t ngx_rtmp_send_sample_access(ngx_rtmp_session_t *s);
 #define NGX_RTMP_VIDEO_INTER_FRAME          2
 #define NGX_RTMP_VIDEO_DISPOSABLE_FRAME     3
 
+#define rtmpSetStr(name, str) name.len = sizeof(str) -1; name.data=(u_char*)str;
 
 static ngx_inline ngx_int_t
 ngx_rtmp_get_video_frame_type(ngx_chain_t *in)
