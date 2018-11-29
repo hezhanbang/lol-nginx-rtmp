@@ -278,6 +278,12 @@ ngx_mysql_dummy_send(ngx_event_t *wev)
 }
 
 
+void
+ngx_mysql_dummy_recv(ngx_event_t *rev)
+{
+}
+
+
 //Reading Handshake Initialization Packet
 void
 ngx_mysql_recv_init_package(ngx_event_t *rev)
@@ -377,7 +383,11 @@ ngx_mysql_recv_init_package(ngx_event_t *rev)
 fail:
     if(!ok) {
         ngx_mysql_connect_close(cc);
+        return;
     }
+
+    cc->write->handler = ngx_mysql_send_auth_package;
+    cc->read->handler = ngx_mysql_dummy_recv;
 }
 
 
