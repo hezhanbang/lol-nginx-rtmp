@@ -215,16 +215,61 @@ ngx_mysql_free_peer(ngx_peer_connection_t *pc, void *data,
 
 
 void
-ngx_mysql_ev_send(ngx_event_t *wev)
+ngx_mysql_connect_close(ngx_connection_t *cc)
 {
+    ngx_pool_t      *pool;
 
+    if (cc->destroyed) {
+        return;
+    }
+
+    cc->destroyed = 1;
+
+    pool = cc->pool;
+    ngx_close_connection(cc);
+    ngx_destroy_pool(pool);
 }
 
 
 void
-ngx_mysql_ev_recv(ngx_event_t *rev)
+ngx_mysql_dummy_send(ngx_event_t *wev)
 {
+}
 
+
+//Reading Handshake Initialization Packet
+void
+ngx_mysql_recv_init_package(ngx_event_t *rev)
+{
+    ngx_connection_t                 *cc;
+    ngx_buf_t                        *b;
+    ngx_int_t                         n;
+
+    cc = rev->data;
+
+    if (cc->destroyed) {
+        return;
+    }
+
+    if (rev->timedout) {
+        cc->timedout = 1;
+        ngx_mysql_connect_close(cc);
+        return;
+    }
+
+    if (rev->timer_set) {
+        ngx_del_timer(rev);
+    }
+
+    b = ngx_mysql_connection.in->buf;
+    n = cc->recv(cc, b->last, b->end - b->last);
+    if(n<5) {
+        ngx_mysql_connect_close(cc);
+        return;
+    }
+    //got package now
+
+    
 }
 
 
@@ -239,6 +284,7 @@ ngx_mysql_connect()
     int                      ok = 0;
     ngx_url_t               *url;
     int                      len;
+    ngx_chain_t             *pl;
 
     mycf = (ngx_mysql_conf_t*)ngx_cycle->conf_ctx[ngx_mysql_module.index];
     ngx_log_error(NGX_LOG_INFO, ngx_cycle->log, 0, 
@@ -299,15 +345,38 @@ ngx_mysql_connect()
 
     cc = pc->connection;
     cc->pool = ngx_mysql_connection.pool;
-    cc->write->handler = ngx_mysql_ev_send;
-    cc->read->handler = ngx_mysql_ev_recv;
+    cc->write->handler = ngx_mysql_dummy_send;
+    cc->read->handler = ngx_mysql_recv_init_package;
 
+    //create in chain
+    pl = ngx_alloc_chain_link(ngx_mysql_connection.pool);
+    if (pl == NULL) {
+        goto error;
+    }
+    pl->buf = ngx_create_temp_buf(ngx_mysql_connection.pool, 256);
+    if (pl->buf == NULL) {
+        goto error;
+    }
+    ngx_mysql_connection.in = pl;
+
+    //create out chain
+    pl = ngx_alloc_chain_link(ngx_mysql_connection.pool);
+    if (pl == NULL) {
+        goto error;
+    }
+    pl->buf = ngx_create_temp_buf(ngx_mysql_connection.pool, 256);
+    if (pl->buf == NULL) {
+        goto error;
+    }
+    ngx_mysql_connection.out = pl;
 
     ok = 1;
 error:
-    if (ngx_mysql_connection.pool && !ok) {
-        ngx_destroy_pool(ngx_mysql_connection.pool);
+    if(!ok){
+        if (ngx_mysql_connection.pool) {
+            ngx_destroy_pool(ngx_mysql_connection.pool);
+        }
+        return NGX_ERROR;
     }
-
     return NGX_OK;
 }

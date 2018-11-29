@@ -19,9 +19,12 @@ typedef struct {
 } ngx_mysql_conf_t;
 
 typedef struct {
-    int         sock;
-    uint8_t     sequence;
-    ngx_pool_t  *pool;
+    int                 sock;
+    uint8_t             sequence;
+    ngx_pool_t         *pool;
+
+    ngx_chain_t        *in;
+    ngx_chain_t        *out;
 } ngx_mysql_ctx_t;
 
 ngx_int_t ngx_mysql_connect();
