@@ -78,8 +78,6 @@ static void *ngx_mysql_module_create_conf(ngx_cycle_t *cycle);
 
 ngx_int_t ngx_mysql_query(ngx_cycle_t *cycle, char *sql);
 ngx_int_t ngx_mysql_writeCommandPacketStr(enum mysqlCmdType type, char* cmdStr);
-ngx_int_t ngx_mysql_write_packet(int sock, u_char *data, int len);
-ngx_int_t ngx_mysql_read_packet(int sock, u_char *buf, int cap);
 ngx_int_t ngx_mysql_read(int sock, u_char *buf, int cap);
 ngx_int_t ngx_mysql_sha256(u_char *hash, u_char *buf, int len);
 ngx_int_t ngx_mysql_sha1(u_char *hash, u_char *buf, int len);
@@ -214,14 +212,29 @@ ngx_mysql_free_peer(ngx_peer_connection_t *pc, void *data,
 }
 
 
+void
+ngx_mysql_connect_close(ngx_connection_t *cc)
+{
+    ngx_pool_t      *pool;
+
+    if (cc->destroyed) {
+        return;
+    }
+
+    cc->destroyed = 1;
+
+    pool = cc->pool;
+    ngx_close_connection(cc);
+    ngx_destroy_pool(pool);
+}
+
+
 ngx_int_t
 ngx_mysql_read_packet(ngx_connection_t *cc, ngx_event_t *rev)
 {
     ngx_buf_t  *b;
     ngx_int_t   n;
     int         pktLen;
-    int         ret;
-    int         got;
     u_char     *data;
 
     b = ngx_mysql_connection.in->buf;
@@ -233,7 +246,7 @@ ngx_mysql_read_packet(ngx_connection_t *cc, ngx_event_t *rev)
      if (n == NGX_AGAIN) {
         ngx_add_timer(rev, ngx_mysql_connection.timeout);
         if (ngx_handle_read_event(rev, 0) != NGX_OK) {
-            ngx_rtmp_netcall_close(cc);
+            ngx_mysql_connect_close(cc);
         }
         return NGX_OK;
     }
@@ -260,23 +273,6 @@ ngx_mysql_read_packet(ngx_connection_t *cc, ngx_event_t *rev)
 
 
 void
-ngx_mysql_connect_close(ngx_connection_t *cc)
-{
-    ngx_pool_t      *pool;
-
-    if (cc->destroyed) {
-        return;
-    }
-
-    cc->destroyed = 1;
-
-    pool = cc->pool;
-    ngx_close_connection(cc);
-    ngx_destroy_pool(pool);
-}
-
-
-void
 ngx_mysql_dummy_send(ngx_event_t *wev)
 {
 }
@@ -287,8 +283,6 @@ void
 ngx_mysql_recv_init_package(ngx_event_t *rev)
 {
     ngx_connection_t                 *cc;
-    ngx_buf_t                        *b;
-    ngx_int_t                         n;
 
     cc = rev->data;
 
