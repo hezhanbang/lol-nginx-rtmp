@@ -212,7 +212,7 @@ ngx_mysql_query(char *sql)
 {
     if(!ngx_mysql_connection.connected){
         ngx_mysql_connect();
-        return NGX_AGAIN;
+        return NGX_OK;
     }
     return NGX_OK;
 }
