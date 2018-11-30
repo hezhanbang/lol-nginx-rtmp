@@ -77,8 +77,16 @@ char *ngx_set_mysql_info(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static void *ngx_mysql_module_create_conf(ngx_cycle_t *cycle);
 
 ngx_int_t ngx_mysql_query(ngx_cycle_t *cycle, char *sql);
+
+//handshake
+void ngx_mysql_recv_init_package(ngx_event_t *rev);
+void ngx_mysql_send_auth_package(ngx_event_t *wev);
+void ngx_mysql_recv_auth_result(ngx_event_t *rev);
 ngx_int_t ngx_mysql_sha256(u_char *hash, u_char *buf, int len);
 ngx_int_t ngx_mysql_sha1(u_char *hash, u_char *buf, int len);
+
+ngx_int_t ngx_mysql_write_packet(ngx_connection_t *cc, ngx_event_t *rev);
+ngx_int_t ngx_mysql_read_packet(ngx_connection_t *cc, ngx_event_t *rev);
 
 
 ngx_mysql_ctx_t ngx_mysql_connection;
@@ -227,77 +235,6 @@ ngx_mysql_connect_close(ngx_connection_t *cc)
 }
 
 
-ngx_int_t
-ngx_mysql_write_packet(ngx_connection_t *cc, ngx_event_t *rev)
-{
-    ngx_chain_t                        *chain;
-    int                                 pktLen;
-    u_char                             *data;
-    
-    pktLen = ngx_mysql_connection.out->buf->last - ngx_mysql_connection.out->buf->pos - 4;
-    data = ngx_mysql_connection.out->buf->pos;
-
-    data[0] = (u_char)pktLen;
-    data[1] = (u_char)(pktLen >> 8);
-    data[2] = (u_char)(pktLen >> 16);
-    data[3] = ngx_mysql_connection.sequence;
-
-    chain = cc->send_chain(cc, ngx_mysql_connection.out, 0);
-
-    ngx_log_debug1(NGX_LOG_DEBUG_RTMP, ngx_cycle->log, 0, "mysql connection write %p", chain);
-
-    if (chain == NGX_CHAIN_ERROR) {
-        cc->error = 1;
-        return NGX_ERROR;
-    }
-    ngx_mysql_connection.sequence++;
-    return NGX_OK;
-}
-
-
-ngx_int_t
-ngx_mysql_read_packet(ngx_connection_t *cc, ngx_event_t *rev)
-{
-    ngx_buf_t  *b;
-    ngx_int_t   n;
-    int         pktLen;
-    u_char     *data;
-
-    b = ngx_mysql_connection.in->buf;
-    n = cc->recv(cc, b->last, b->end - b->last);
-    if (n == NGX_ERROR || n == 0) {
-        ngx_mysql_connect_close(cc);
-        return NGX_ERROR;
-    }
-     if (n == NGX_AGAIN) {
-        ngx_add_timer(rev, ngx_mysql_connection.timeout);
-        if (ngx_handle_read_event(rev, 0) != NGX_OK) {
-            ngx_mysql_connect_close(cc);
-        }
-        return NGX_OK;
-    }
-
-    if(n<4){
-        return NGX_ERROR;
-    }
-    data=b->pos;
-
-    // packet length [24 bit]
-	pktLen = (int)( (uint32_t)(data[0]) | ((uint32_t)(data[1]))<<8 | ((uint32_t)(data[2]))<<16);
-    // check packet sync [8 bit]
-    if(data[3] != ngx_mysql_connection.sequence) {
-        return NGX_ERROR;
-    }
-    ngx_mysql_connection.sequence++;
-
-    if(n < 4+ pktLen){
-        return NGX_ERROR;
-    }
-    b->last = b->pos + 4 + pktLen;
-    return NGX_OK;
-}
-
-
 void
 ngx_mysql_dummy_send(ngx_event_t *wev)
 {
@@ -310,7 +247,222 @@ ngx_mysql_dummy_recv(ngx_event_t *rev)
 }
 
 
-void ngx_mysql_send_auth_package(ngx_event_t *wev)
+ngx_int_t
+ngx_mysql_connect()
+{
+    ngx_mysql_conf_t        *mycf;
+    ngx_int_t                rc;
+    ngx_peer_connection_t   *pc;
+    ngx_connection_t        *cc;
+    u_char                   data[32];
+    int                      ok = 0;
+    ngx_url_t               *url;
+    int                      len;
+    ngx_chain_t             *pl;
+
+    mycf = (ngx_mysql_conf_t*)ngx_cycle->conf_ctx[ngx_mysql_module.index];
+    ngx_log_error(NGX_LOG_INFO, ngx_cycle->log, 0, 
+        "hebang do ngx_mysql_connect [ip=%V port=%d user=%V pwd=%V database=%V]",
+        &mycf->ip,
+        mycf->port,
+        &mycf->user,
+        &mycf->pwd,
+        &mycf->dbName
+        );
+
+    ngx_mysql_connection.sequence=0;
+    //create pool
+    ngx_mysql_connection.pool = ngx_create_pool(4096, ngx_cycle->log);
+    if (ngx_mysql_connection.pool == NULL) {
+        goto error;
+    }
+
+    //url
+    url = ngx_pcalloc(ngx_mysql_connection.pool, sizeof(ngx_url_t));
+    if (url == NULL) {
+        goto error;
+    }
+    len = ngx_sprintf(data, "%V:%d", &mycf->ip, mycf->port) - data;
+
+    url->url.len = len;
+    url->url.data = data;
+    url->default_port = 3306;
+    url->uri_part = 1;
+
+    rc = ngx_parse_url(ngx_mysql_connection.pool, url);
+    if(NGX_OK != rc) {
+        goto error;
+    }
+    rtmpSetStr(url->addrs->name, "mysql_server");
+
+    //create connection
+    pc = ngx_pcalloc(ngx_mysql_connection.pool, sizeof(ngx_peer_connection_t));
+    if (pc == NULL) {
+        goto error;
+    }
+
+    pc->log = ngx_cycle->log;
+    pc->log_error = NGX_ERROR_ERR;
+    pc->get = ngx_mysql_get_peer;
+    pc->free = ngx_mysql_free_peer;
+
+    pc->sockaddr = url->addrs->sockaddr;
+    pc->socklen = url->addrs->socklen;
+    pc->name = &url->addrs->name;
+
+    /* connect */
+    rc = ngx_event_connect_peer(pc);
+    if (rc != NGX_OK && rc != NGX_AGAIN ) {
+        ngx_log_debug0(NGX_LOG_DEBUG_CORE, ngx_cycle->log, 0, "fail to connect mysql");
+        ngx_close_connection(pc->connection);
+        goto error;
+    }
+
+    cc = pc->connection;
+    cc->pool = ngx_mysql_connection.pool;
+    cc->write->handler = ngx_mysql_dummy_send;
+    cc->read->handler = ngx_mysql_recv_init_package;
+
+    //create in chain
+    pl = ngx_alloc_chain_link(ngx_mysql_connection.pool);
+    if (pl == NULL) {
+        goto error;
+    }
+    pl->buf = ngx_create_temp_buf(ngx_mysql_connection.pool, 256);
+    if (pl->buf == NULL) {
+        goto error;
+    }
+    ngx_mysql_connection.in = pl;
+
+    //create out chain
+    pl = ngx_alloc_chain_link(ngx_mysql_connection.pool);
+    if (pl == NULL) {
+        goto error;
+    }
+    pl->buf = ngx_create_temp_buf(ngx_mysql_connection.pool, 256);
+    if (pl->buf == NULL) {
+        goto error;
+    }
+    ngx_mysql_connection.out = pl;
+
+    ok = 1;
+error:
+    if(!ok){
+        if (ngx_mysql_connection.pool) {
+            ngx_destroy_pool(ngx_mysql_connection.pool);
+        }
+        return NGX_ERROR;
+    }
+    return NGX_OK;
+}
+
+
+//Reading Handshake Initialization Packet
+void
+ngx_mysql_recv_init_package(ngx_event_t *rev)
+{
+    ngx_connection_t           *cc;
+    u_char                     *data;     
+    int                         error, index, pos, len;
+
+    cc = rev->data;
+
+    if (cc->destroyed) {
+        return;
+    }
+
+    if (rev->timedout) {
+        cc->timedout = 1;
+        goto fail;
+    }
+
+    if (rev->timer_set) {
+        ngx_del_timer(rev);
+    }
+
+    if(NGX_OK != ngx_mysql_read_packet(cc, rev)){
+        goto fail;
+    }
+    //got package now
+    data = ngx_mysql_connection.in->buf->pos + 4;
+    len = ngx_mysql_connection.in->buf->last - data;
+
+    if(0xff==data[0]){
+        ngx_str_t errstr;
+        error = (int)( (uint32_t)data[1] | (uint32_t)data[2]<<8 );
+        errstr.data= data+3;
+        errstr.len=len-3;
+        ngx_log_error(NGX_LOG_DEBUG, ngx_cycle->log, 0, "fail to connect mysql: code=%d msg=\"%V\"", error, &errstr);
+        goto fail;
+    }
+    // protocol version [1 byte]
+    if(data[0] < 10){
+        goto fail;
+    }
+
+    // server version [null terminated string]
+    // connection id [4 bytes]
+    for(index=1; index< len-2; index++){
+        if(data[index]=='\0') {
+            ngx_log_error(NGX_LOG_DEBUG, ngx_cycle->log, 0, "mysql version: %s", (char*)data+1);
+            break;
+        }
+    }
+    pos = index + 1 + 4;
+    // first part of the password cipher [8 bytes]
+    memcpy(ngx_mysql_connection.authData, data+pos, 8);
+    ngx_mysql_connection.authLen=8;
+    // (filler) always 0x00 [1 byte]
+    pos += 8 + 1;
+    // capability flagngx_mysql_recv_init_packages (lower 2 bytes) [2 bytes]
+    ngx_mysql_connection.flags = (uint32_t)data[pos] | (uint32_t)(data[pos+1]<<8);
+    //check clientProtocol41
+    if((ngx_mysql_connection.flags & clientProtocol41) == 0){
+        goto fail;
+    }
+    pos+=2;
+
+    if(len>pos){
+        // character set [1 byte]
+        // status flags [2 bytes]
+        // capability flags (upper 2 bytes) [2 bytes]
+        // length of auth-plugin-data [1 byte]
+        // reserved (all [00]) [10 bytes]
+        pos += 1 + 2 + 2 + 1 + 10;
+        memcpy(ngx_mysql_connection.authData+8, data+pos, 12);
+        ngx_mysql_connection.authLen+=12;
+        pos += 13;
+
+        // EOF if version (>= 5.5.7 and < 5.5.10) or (>= 5.6.0 and < 5.6.2)
+        // \NUL otherwise
+        for(index=pos; index<len; index++) {
+            if(data[index]=='\0'){
+                break;
+            }
+        }
+        if(index<len){
+                strcpy(ngx_mysql_connection.plugin, (char*)data+pos);
+        }else{
+            memcpy(ngx_mysql_connection.plugin, (char*)data+pos, len-pos);
+            ngx_mysql_connection.plugin[len-pos]='\0';
+        }
+        if(ngx_mysql_connection.plugin[0]=='\0'){
+            strcpy(ngx_mysql_connection.plugin, "mysql_native_password");
+        }
+    }
+
+    cc->write->handler = ngx_mysql_send_auth_package;
+    cc->read->handler = ngx_mysql_recv_auth_result;
+    ngx_mysql_send_auth_package(cc->write);
+    return;
+
+fail:
+    ngx_mysql_connect_close(cc);
+}
+
+
+void
+ngx_mysql_send_auth_package(ngx_event_t *wev)
 {
     ngx_connection_t *cc;
     ngx_mysql_conf_t *mycf;
@@ -456,221 +608,10 @@ fail:
 }
 
 
-//Reading Handshake Initialization Packet
 void
-ngx_mysql_recv_init_package(ngx_event_t *rev)
+ngx_mysql_recv_auth_result(ngx_event_t *rev)
 {
-    ngx_connection_t           *cc;
-    u_char                     *data;     
-    int                         error, index, pos, len;
-    int                         ok = 0;
 
-    cc = rev->data;
-
-    if (cc->destroyed) {
-        return;
-    }
-
-    if (rev->timedout) {
-        cc->timedout = 1;
-        goto fail;
-    }
-
-    if (rev->timer_set) {
-        ngx_del_timer(rev);
-    }
-
-    if(NGX_OK != ngx_mysql_read_packet(cc, rev)){
-        goto fail;
-    }
-    //got package now
-    data = ngx_mysql_connection.in->buf->pos + 4;
-    len = ngx_mysql_connection.in->buf->last - data;
-
-    if(0xff==data[0]){
-        ngx_str_t errstr;
-        error = (int)( (uint32_t)data[1] | (uint32_t)data[2]<<8 );
-        errstr.data= data+3;
-        errstr.len=len-3;
-        ngx_log_error(NGX_LOG_DEBUG, ngx_cycle->log, 0, "fail to connect mysql: code=%d msg=\"%V\"", error, &errstr);
-        goto fail;
-    }
-    // protocol version [1 byte]
-    if(data[0] < 10){
-        goto fail;
-    }
-
-    // server version [null terminated string]
-    // connection id [4 bytes]
-    for(index=1; index< len-2; index++){
-        if(data[index]=='\0') {
-            ngx_log_error(NGX_LOG_DEBUG, ngx_cycle->log, 0, "mysql version: %s", (char*)data+1);
-            break;
-        }
-    }
-    pos = index + 1 + 4;
-    // first part of the password cipher [8 bytes]
-    memcpy(ngx_mysql_connection.authData, data+pos, 8);
-    ngx_mysql_connection.authLen=8;
-    // (filler) always 0x00 [1 byte]
-    pos += 8 + 1;
-    // capability flags (lower 2 bytes) [2 bytes]
-    ngx_mysql_connection.flags = (uint32_t)data[pos] | (uint32_t)(data[pos+1]<<8);
-    //check clientProtocol41
-    if((ngx_mysql_connection.flags & clientProtocol41) == 0){
-        goto fail;
-    }
-    pos+=2;
-
-    if(len>pos){
-        // character set [1 byte]
-        // status flags [2 bytes]
-        // capability flags (upper 2 bytes) [2 bytes]
-        // length of auth-plugin-data [1 byte]
-        // reserved (all [00]) [10 bytes]
-        pos += 1 + 2 + 2 + 1 + 10;
-        memcpy(ngx_mysql_connection.authData+8, data+pos, 12);
-        ngx_mysql_connection.authLen+=12;
-        pos += 13;
-
-        // EOF if version (>= 5.5.7 and < 5.5.10) or (>= 5.6.0 and < 5.6.2)
-        // \NUL otherwise
-        for(index=pos; index<len; index++) {
-            if(data[index]=='\0'){
-                break;
-            }
-        }
-        if(index<len){
-                strcpy(ngx_mysql_connection.plugin, (char*)data+pos);
-        }else{
-            memcpy(ngx_mysql_connection.plugin, (char*)data+pos, len-pos);
-            ngx_mysql_connection.plugin[len-pos]='\0';
-        }
-        if(ngx_mysql_connection.plugin[0]=='\0'){
-            strcpy(ngx_mysql_connection.plugin, "mysql_native_password");
-        }
-    }
-
-    ok = 1;
-fail:
-    if(!ok) {
-        ngx_mysql_connect_close(cc);
-        return;
-    }
-
-    cc->write->handler = ngx_mysql_send_auth_package;
-    cc->read->handler = ngx_mysql_dummy_recv;
-    ngx_mysql_send_auth_package(cc->write);
-}
-
-
-ngx_int_t
-ngx_mysql_connect()
-{
-    ngx_mysql_conf_t        *mycf;
-    ngx_int_t                rc;
-    ngx_peer_connection_t   *pc;
-    ngx_connection_t        *cc;
-    u_char                   data[32];
-    int                      ok = 0;
-    ngx_url_t               *url;
-    int                      len;
-    ngx_chain_t             *pl;
-
-    mycf = (ngx_mysql_conf_t*)ngx_cycle->conf_ctx[ngx_mysql_module.index];
-    ngx_log_error(NGX_LOG_INFO, ngx_cycle->log, 0, 
-        "hebang do ngx_mysql_connect [ip=%V port=%d user=%V pwd=%V database=%V]",
-        &mycf->ip,
-        mycf->port,
-        &mycf->user,
-        &mycf->pwd,
-        &mycf->dbName
-        );
-
-    ngx_mysql_connection.sequence=0;
-    //create pool
-    ngx_mysql_connection.pool = ngx_create_pool(4096, ngx_cycle->log);
-    if (ngx_mysql_connection.pool == NULL) {
-        goto error;
-    }
-
-    //url
-    url = ngx_pcalloc(ngx_mysql_connection.pool, sizeof(ngx_url_t));
-    if (url == NULL) {
-        goto error;
-    }
-    len = ngx_sprintf(data, "%V:%d", &mycf->ip, mycf->port) - data;
-
-    url->url.len = len;
-    url->url.data = data;
-    url->default_port = 3306;
-    url->uri_part = 1;
-
-    rc = ngx_parse_url(ngx_mysql_connection.pool, url);
-    if(NGX_OK != rc) {
-        goto error;
-    }
-    rtmpSetStr(url->addrs->name, "mysql_server");
-
-    //create connection
-    pc = ngx_pcalloc(ngx_mysql_connection.pool, sizeof(ngx_peer_connection_t));
-    if (pc == NULL) {
-        goto error;
-    }
-
-    pc->log = ngx_cycle->log;
-    pc->log_error = NGX_ERROR_ERR;
-    pc->get = ngx_mysql_get_peer;
-    pc->free = ngx_mysql_free_peer;
-
-    pc->sockaddr = url->addrs->sockaddr;
-    pc->socklen = url->addrs->socklen;
-    pc->name = &url->addrs->name;
-
-    /* connect */
-    rc = ngx_event_connect_peer(pc);
-    if (rc != NGX_OK && rc != NGX_AGAIN ) {
-        ngx_log_debug0(NGX_LOG_DEBUG_CORE, ngx_cycle->log, 0, "fail to connect mysql");
-        ngx_close_connection(pc->connection);
-        goto error;
-    }
-
-    cc = pc->connection;
-    cc->pool = ngx_mysql_connection.pool;
-    cc->write->handler = ngx_mysql_dummy_send;
-    cc->read->handler = ngx_mysql_recv_init_package;
-
-    //create in chain
-    pl = ngx_alloc_chain_link(ngx_mysql_connection.pool);
-    if (pl == NULL) {
-        goto error;
-    }
-    pl->buf = ngx_create_temp_buf(ngx_mysql_connection.pool, 256);
-    if (pl->buf == NULL) {
-        goto error;
-    }
-    ngx_mysql_connection.in = pl;
-
-    //create out chain
-    pl = ngx_alloc_chain_link(ngx_mysql_connection.pool);
-    if (pl == NULL) {
-        goto error;
-    }
-    pl->buf = ngx_create_temp_buf(ngx_mysql_connection.pool, 256);
-    if (pl->buf == NULL) {
-        goto error;
-    }
-    ngx_mysql_connection.out = pl;
-
-    ok = 1;
-error:
-    if(!ok){
-        if (ngx_mysql_connection.pool) {
-            ngx_destroy_pool(ngx_mysql_connection.pool);
-        }
-        return NGX_ERROR;
-    }
-    return NGX_OK;
 }
 
 
@@ -694,5 +635,76 @@ ngx_mysql_sha1(u_char *hash, u_char *buf, int len)
     SHA1_Update(&sha1, buf, len);
     SHA1_Final(hash, &sha1);
 
+    return NGX_OK;
+}
+
+
+ngx_int_t
+ngx_mysql_write_packet(ngx_connection_t *cc, ngx_event_t *rev)
+{
+    ngx_chain_t                        *chain;
+    int                                 pktLen;
+    u_char                             *data;
+    
+    pktLen = ngx_mysql_connection.out->buf->last - ngx_mysql_connection.out->buf->pos - 4;
+    data = ngx_mysql_connection.out->buf->pos;
+
+    data[0] = (u_char)pktLen;
+    data[1] = (u_char)(pktLen >> 8);
+    data[2] = (u_char)(pktLen >> 16);
+    data[3] = ngx_mysql_connection.sequence;
+
+    chain = cc->send_chain(cc, ngx_mysql_connection.out, 0);
+
+    ngx_log_debug1(NGX_LOG_DEBUG_RTMP, ngx_cycle->log, 0, "mysql connection write %p", chain);
+
+    if (chain == NGX_CHAIN_ERROR) {
+        cc->error = 1;
+        return NGX_ERROR;
+    }
+    ngx_mysql_connection.sequence++;
+    return NGX_OK;
+}
+
+
+ngx_int_t
+ngx_mysql_read_packet(ngx_connection_t *cc, ngx_event_t *rev)
+{
+    ngx_buf_t  *b;
+    ngx_int_t   n;
+    int         pktLen;
+    u_char     *data;
+
+    b = ngx_mysql_connection.in->buf;
+    n = cc->recv(cc, b->last, b->end - b->last);
+    if (n == NGX_ERROR || n == 0) {
+        ngx_mysql_connect_close(cc);
+        return NGX_ERROR;
+    }
+     if (n == NGX_AGAIN) {
+        ngx_add_timer(rev, ngx_mysql_connection.timeout);
+        if (ngx_handle_read_event(rev, 0) != NGX_OK) {
+            ngx_mysql_connect_close(cc);
+        }
+        return NGX_OK;
+    }
+
+    if(n<4){
+        return NGX_ERROR;
+    }
+    data=b->pos;
+
+    // packet length [24 bit]
+	pktLen = (int)( (uint32_t)(data[0]) | ((uint32_t)(data[1]))<<8 | ((uint32_t)(data[2]))<<16);
+    // check packet sync [8 bit]
+    if(data[3] != ngx_mysql_connection.sequence) {
+        return NGX_ERROR;
+    }
+    ngx_mysql_connection.sequence++;
+
+    if(n < 4+ pktLen){
+        return NGX_ERROR;
+    }
+    b->last = b->pos + 4 + pktLen;
     return NGX_OK;
 }
