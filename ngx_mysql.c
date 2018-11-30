@@ -77,8 +77,6 @@ char *ngx_set_mysql_info(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static void *ngx_mysql_module_create_conf(ngx_cycle_t *cycle);
 
 ngx_int_t ngx_mysql_query(ngx_cycle_t *cycle, char *sql);
-ngx_int_t ngx_mysql_writeCommandPacketStr(enum mysqlCmdType type, char* cmdStr);
-ngx_int_t ngx_mysql_read(int sock, u_char *buf, int cap);
 ngx_int_t ngx_mysql_sha256(u_char *hash, u_char *buf, int len);
 ngx_int_t ngx_mysql_sha1(u_char *hash, u_char *buf, int len);
 
@@ -230,6 +228,34 @@ ngx_mysql_connect_close(ngx_connection_t *cc)
 
 
 ngx_int_t
+ngx_mysql_write_packet(ngx_connection_t *cc, ngx_event_t *rev)
+{
+    ngx_chain_t                        *chain;
+    int                                 pktLen;
+    u_char                             *data;
+    
+    pktLen = ngx_mysql_connection.out->buf->last - ngx_mysql_connection.out->buf->pos - 4;
+    data = ngx_mysql_connection.out->buf->pos;
+
+    data[0] = (u_char)pktLen;
+    data[1] = (u_char)(pktLen >> 8);
+    data[2] = (u_char)(pktLen >> 16);
+    data[3] = ngx_mysql_connection.sequence;
+
+    chain = cc->send_chain(cc, ngx_mysql_connection.out, 0);
+
+    ngx_log_debug1(NGX_LOG_DEBUG_RTMP, ngx_cycle->log, 0, "mysql connection write %p", chain);
+
+    if (chain == NGX_CHAIN_ERROR) {
+        cc->error = 1;
+        return NGX_ERROR;
+    }
+    ngx_mysql_connection.sequence++;
+    return NGX_OK;
+}
+
+
+ngx_int_t
 ngx_mysql_read_packet(ngx_connection_t *cc, ngx_event_t *rev)
 {
     ngx_buf_t  *b;
@@ -286,7 +312,147 @@ ngx_mysql_dummy_recv(ngx_event_t *rev)
 
 void ngx_mysql_send_auth_package(ngx_event_t *wev)
 {
+    ngx_connection_t *cc;
+    ngx_mysql_conf_t *mycf;
+    unsigned char    authResp[256];
+    int              authRespLen=0;
+    u_char           authSizeMark[9];  
+    u_char          *respBuf;
+    int              pos, index;
+    int              pktLen=0;
+    int              markSize=0; 
 
+    cc = wev->data;
+
+    if (cc->destroyed) {
+        return;
+    }
+
+    if (wev->timedout) {
+        cc->timedout = 1;
+        goto fail;
+    }
+
+    mycf = (ngx_mysql_conf_t*)ngx_cycle->conf_ctx[ngx_mysql_module.index];
+
+    if(memcmp(ngx_mysql_connection.plugin, "mysql_native_password", 22)==0){
+        unsigned char hash[SHA_DIGEST_LENGTH];
+        unsigned char hash2[SHA_DIGEST_LENGTH+64];
+
+        // scrambleHash = SHA1(scramble + SHA1(SHA1(password)))
+        ngx_mysql_sha1(hash, mycf->pwd.data, mycf->pwd.len); //SHA1(password)
+        ngx_mysql_sha1(hash2+20, hash, SHA_DIGEST_LENGTH);   //SHA1(SHA1(password))
+        memcpy(hash2, ngx_mysql_connection.authData, 20);     //scramble + SHA1(SHA1(password))
+        ngx_mysql_sha1(hash, hash2, 20 + SHA_DIGEST_LENGTH);
+
+        // stage1Hash = SHA1(password)
+        ngx_mysql_sha1(hash2, mycf->pwd.data, mycf->pwd.len);
+
+        // token = scrambleHash XOR stage1Hash
+        for(index=0; index<SHA_DIGEST_LENGTH; index++) {
+            authResp[index] = hash2[index] ^ hash[index];
+        }
+        authRespLen=SHA_DIGEST_LENGTH;
+    }else{
+        ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0, "unknown auth plugin:%s", ngx_mysql_connection.plugin);
+        goto fail;
+    }
+
+    ngx_mysql_connection.flags = clientProtocol41 |
+        clientSecureConn |
+        clientLongPassword |
+        clientTransactions |
+        clientLocalFiles |
+        clientPluginAuth |
+        clientMultiResults |
+        (ngx_mysql_connection.flags & clientLongFlag);
+
+    // encode length of the auth plugin data
+    if(authRespLen <= 250) {
+        authSizeMark[0]=authRespLen;
+        markSize=1;
+    }
+    else if(authRespLen <= 0xffff) {
+        authSizeMark[0]=0xfc;
+        authSizeMark[1]=(u_char)authRespLen;
+        authSizeMark[2]=(u_char)(authRespLen>>8);
+        markSize=3;
+    }
+    else if(authRespLen <= 0xffffff) {
+        authSizeMark[0]=0xfd;
+        authSizeMark[1]=(u_char)authRespLen;
+        authSizeMark[2]=(u_char)(authRespLen>>8);
+        authSizeMark[3]=(u_char)(authRespLen>>16);
+        markSize=4;
+    }else {
+        ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0, "authRespLen is too big");
+        goto fail;
+    }
+    if(markSize>1) {
+        // if the length can not be written in 1 byte, it must be written as a
+        // length encoded integer
+        ngx_mysql_connection.flags |= clientPluginAuthLenEncClientData;
+    }
+
+    pktLen = 4 + 4 + 1 + 23 + mycf->user.len + 1 + markSize + authRespLen + 21 + 1;
+
+    // To specify a db name
+    ngx_mysql_connection.flags |= clientConnectWithDB;
+    pktLen += mycf->dbName.len + 1;
+
+    // Calculate packet length and get buffer with that size
+    respBuf=(u_char*) ngx_mysql_connection.out->buf->pos;
+    ngx_mysql_connection.out->buf->last = respBuf + 4 + pktLen;
+
+    // ClientFlags [32 bit]
+    respBuf[4] = (u_char)ngx_mysql_connection.flags;
+    respBuf[5] = (u_char)(ngx_mysql_connection.flags >> 8);
+    respBuf[6] = (u_char)(ngx_mysql_connection.flags >> 16);
+    respBuf[7] = (u_char)(ngx_mysql_connection.flags >> 24);
+    // MaxPacketSize [32 bit] (none)
+    respBuf[8] = 0x00;
+    respBuf[9] = 0x00;
+    respBuf[10] = 0x00;
+    respBuf[11] = 0x00;
+    // Charset [1 byte]
+    respBuf[12]=33;  //"utf8_general_ci": 33,
+    // Filler [23 bytes] (all 0x00)
+    pos = 13;
+    for(; pos < 13+23; pos++) {
+        respBuf[pos] = 0;
+    }
+
+    // User [null terminated string]
+    memcpy(respBuf+pos,mycf->user.data, mycf->user.len);
+    pos+=mycf->user.len;
+    respBuf[pos] = 0x00;
+    pos++;
+
+    // Auth Data [length encoded integer]
+    memcpy(respBuf+pos, authSizeMark, markSize);
+    pos += markSize;
+
+    memcpy(respBuf+pos, authResp, authRespLen);
+    pos+=authRespLen;
+
+    // Databasename [null terminated string]
+    memcpy(respBuf+pos, mycf->dbName.data, mycf->dbName.len);
+    pos += mycf->dbName.len;
+    respBuf[pos] = 0x00;
+    pos++;
+
+    strcpy((char*)respBuf+pos, ngx_mysql_connection.plugin);
+    pos+=strlen(ngx_mysql_connection.plugin);
+
+    // Send Auth packet
+    if(ngx_mysql_write_packet(cc, cc->write) != NGX_OK) {
+        goto fail;
+    }
+
+    return;
+fail:
+    ngx_mysql_connect_close(cc);
+    return;
 }
 
 
@@ -394,6 +560,7 @@ fail:
 
     cc->write->handler = ngx_mysql_send_auth_package;
     cc->read->handler = ngx_mysql_dummy_recv;
+    ngx_mysql_send_auth_package(cc->write);
 }
 
 
@@ -503,5 +670,29 @@ error:
         }
         return NGX_ERROR;
     }
+    return NGX_OK;
+}
+
+
+ngx_int_t
+ngx_mysql_sha256(u_char *hash, u_char *buf, int len)
+{
+    SHA256_CTX sha256;
+    SHA256_Init(&sha256);
+    SHA256_Update(&sha256, buf, len);
+    SHA256_Final(hash, &sha256);
+
+    return NGX_OK;
+}
+
+
+ngx_int_t
+ngx_mysql_sha1(u_char *hash, u_char *buf, int len)
+{
+    SHA_CTX sha1;
+    SHA1_Init(&sha1);
+    SHA1_Update(&sha1, buf, len);
+    SHA1_Final(hash, &sha1);
+
     return NGX_OK;
 }
