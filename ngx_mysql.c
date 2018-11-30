@@ -82,9 +82,12 @@ ngx_int_t ngx_mysql_query(ngx_cycle_t *cycle, char *sql);
 void ngx_mysql_recv_init_package(ngx_event_t *rev);
 void ngx_mysql_send_auth_package(ngx_event_t *wev);
 void ngx_mysql_recv_auth_result(ngx_event_t *rev);
+void ngx_mysql_send_utf8Name(ngx_event_t *wev);
+void ngx_mysql_recv_simple_result(ngx_event_t *rev);
 ngx_int_t ngx_mysql_sha256(u_char *hash, u_char *buf, int len);
 ngx_int_t ngx_mysql_sha1(u_char *hash, u_char *buf, int len);
 
+ngx_int_t ngx_mysql_generateCmdPacket(enum mysqlCmdType type, char* cmdStr);
 ngx_int_t ngx_mysql_write_packet(ngx_connection_t *cc, ngx_event_t *rev);
 ngx_int_t ngx_mysql_read_packet(ngx_connection_t *cc, ngx_event_t *rev);
 
@@ -485,6 +488,10 @@ ngx_mysql_send_auth_package(ngx_event_t *wev)
         goto fail;
     }
 
+    if (wev->timer_set) {
+        ngx_del_timer(wev);
+    }
+
     mycf = (ngx_mysql_conf_t*)ngx_cycle->conf_ctx[ngx_mysql_module.index];
 
     if(memcmp(ngx_mysql_connection.plugin, "mysql_native_password", 22)==0){
@@ -601,6 +608,7 @@ ngx_mysql_send_auth_package(ngx_event_t *wev)
         goto fail;
     }
 
+    ngx_del_event(wev, NGX_WRITE_EVENT, 0);
     return;
 fail:
     ngx_mysql_connect_close(cc);
@@ -613,7 +621,7 @@ ngx_mysql_recv_auth_result(ngx_event_t *rev)
 {
     ngx_connection_t           *cc;
     u_char                     *data;     
-    int                         error, index, pos, len;
+    int                         error, pos, len;
 
     cc = rev->data;
 
@@ -637,7 +645,111 @@ ngx_mysql_recv_auth_result(ngx_event_t *rev)
     data = ngx_mysql_connection.in->buf->pos + 4;
     len = ngx_mysql_connection.in->buf->last - data;
 
+    if(0==data[0]){ //ok package
+
+    } else {
+        if(255==data[0]) { //err pakcage
+            // Error Number [16 bit uint]
+            //errno := binary.LittleEndian.Uint16(data[1:3])
+            error = (int)( (uint32_t)data[1] | (uint32_t)data[2]<<8 );
+
+            pos=3;
+            // SQL State [optional: # + 5bytes string]
+            if(data[3] == 0x23) {
+                //sqlstate := string(data[4 : 4+5])
+                pos = 9;
+            }
+
+            ngx_str_t errstr;
+            errstr.data= data+pos;
+            errstr.len=len-pos;
+            ngx_log_error(NGX_LOG_DEBUG, ngx_cycle->log, 0, "fail to auth mysql: code=%d msg=\"%V\"", error, &errstr);
+        }
+        ngx_log_error(NGX_LOG_DEBUG, ngx_cycle->log, 0, "fail to auth mysql: code=%d", (int32_t)data[0]);
+        goto fail;
+    }
+
+    cc->write->handler = ngx_mysql_send_utf8Name;
+    cc->read->handler = ngx_mysql_recv_simple_result;
+    ngx_mysql_send_utf8Name(cc->write);
     return;
+
+fail:
+    ngx_mysql_connect_close(cc);
+}
+
+
+void
+ngx_mysql_send_utf8Name(ngx_event_t *wev)
+{
+    ngx_connection_t *cc;
+
+    cc = wev->data;
+
+    if (cc->destroyed) {
+        return;
+    }
+
+    if (wev->timedout) {
+        cc->timedout = 1;
+        goto fail;
+    }
+
+    if (wev->timer_set) {
+        ngx_del_timer(wev);
+    }
+
+    if(ngx_mysql_generateCmdPacket(comQuery, "SET NAMES utf8") != NGX_OK){
+        goto fail;
+    }
+
+    // Send packet
+    if(ngx_mysql_write_packet(cc, cc->write) != NGX_OK) {
+        goto fail;
+    }
+    ngx_del_event(wev, NGX_WRITE_EVENT, 0);
+    return;
+
+fail:
+    ngx_mysql_connect_close(cc);
+}
+
+
+
+void
+ngx_mysql_recv_simple_result(ngx_event_t *rev)
+{
+    ngx_connection_t           *cc;
+    u_char                     *data;
+
+    cc = rev->data;
+
+    if (cc->destroyed) {
+        return;
+    }
+
+    if (rev->timedout) {
+        cc->timedout = 1;
+        goto fail;
+    }
+
+    if (rev->timer_set) {
+        ngx_del_timer(rev);
+    }
+
+    if(NGX_OK != ngx_mysql_read_packet(cc, rev)){
+        goto fail;
+    }
+    //got package now
+    data = ngx_mysql_connection.in->buf->pos + 4;
+
+    if(0!=data[0]){ //err package
+        return;
+    }
+
+    __asm__("int3");
+    return;
+
 fail:
     ngx_mysql_connect_close(cc);
 }
@@ -666,6 +778,28 @@ ngx_mysql_sha1(u_char *hash, u_char *buf, int len)
     return NGX_OK;
 }
 
+
+ngx_int_t
+ngx_mysql_generateCmdPacket(enum mysqlCmdType type, char* cmdStr)
+{
+    int         pktLen;
+    u_char      *data;
+
+    data = ngx_mysql_connection.out->buf->pos;
+
+    // Reset Packet Sequence
+	ngx_mysql_connection.sequence = 0;
+	pktLen = 1 + strlen(cmdStr);
+
+	// Add command byte
+	data[4] = type;
+
+	// Add arg
+	strcpy((char*)data+5, cmdStr);
+
+    ngx_mysql_connection.out->buf->last = data + pktLen + 4;
+    return NGX_OK;
+}
 
 ngx_int_t
 ngx_mysql_write_packet(ngx_connection_t *cc, ngx_event_t *rev)
@@ -704,7 +838,7 @@ ngx_mysql_read_packet(ngx_connection_t *cc, ngx_event_t *rev)
     u_char     *data;
 
     b = ngx_mysql_connection.in->buf;
-    n = cc->recv(cc, b->last, b->end - b->last);
+    n = cc->recv(cc, b->pos, b->end - b->pos);
     if (n == NGX_ERROR || n == 0) {
         ngx_mysql_connect_close(cc);
         return NGX_ERROR;
