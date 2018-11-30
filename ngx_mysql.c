@@ -76,9 +76,8 @@ enum mysqlCmdType {
 char *ngx_set_mysql_info(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static void *ngx_mysql_module_create_conf(ngx_cycle_t *cycle);
 
-ngx_int_t ngx_mysql_query(ngx_cycle_t *cycle, char *sql);
-
 //handshake
+ngx_int_t ngx_mysql_connect();
 void ngx_mysql_recv_init_package(ngx_event_t *rev);
 void ngx_mysql_send_auth_package(ngx_event_t *wev);
 void ngx_mysql_recv_auth_result(ngx_event_t *rev);
@@ -181,7 +180,7 @@ ngx_set_mysql_info(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     mycf->dbName.len= value[5].len;
 
     //connected
-    mycf->connected = 0;
+    ngx_mysql_connection.connected = 0;
 
     return NGX_CONF_OK;
 }
@@ -206,6 +205,18 @@ ngx_mysql_module_create_conf(ngx_cycle_t *cycle)
 
     return mycf;
 }
+
+
+ngx_int_t 
+ngx_mysql_query(char *sql)
+{
+    if(!ngx_mysql_connection.connected){
+        ngx_mysql_connect();
+        return NGX_AGAIN;
+    }
+    return NGX_OK;
+}
+
 
 ngx_int_t
 ngx_mysql_get_peer(ngx_peer_connection_t *pc, void *data)

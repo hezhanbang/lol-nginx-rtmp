@@ -15,10 +15,11 @@ typedef struct {
     ngx_str_t user;
     ngx_str_t pwd;
     ngx_str_t dbName;
-    ngx_int_t connected;
 } ngx_mysql_conf_t;
 
 typedef struct {
+
+    ngx_int_t           connected;
     int                 sock;
     uint8_t             sequence;
     ngx_pool_t         *pool;
@@ -33,6 +34,6 @@ typedef struct {
     char                plugin[32];
 } ngx_mysql_ctx_t;
 
-ngx_int_t ngx_mysql_connect();
+ngx_int_t ngx_mysql_query(char *sql);
 
 #endif /* _NGX_MYSQL_H_INCLUDED_ */

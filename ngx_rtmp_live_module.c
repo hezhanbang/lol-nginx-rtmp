@@ -1048,7 +1048,7 @@ ngx_rtmp_live_publish(ngx_rtmp_session_t *s, ngx_rtmp_publish_t *v)
                    v->name, v->type);
 
     //
-    rc = ngx_mysql_connect();
+    rc = ngx_mysql_query("");
     if(NGX_OK != rc){
         return NGX_ERROR;
     }
