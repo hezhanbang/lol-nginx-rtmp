@@ -744,10 +744,9 @@ ngx_mysql_recv_simple_result(ngx_event_t *rev)
     data = ngx_mysql_connection.in->buf->pos + 4;
 
     if(0!=data[0]){ //err package
-        return;
+        goto fail;
     }
 
-    __asm__("int3");
     return;
 
 fail:
