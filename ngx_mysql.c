@@ -611,7 +611,35 @@ fail:
 void
 ngx_mysql_recv_auth_result(ngx_event_t *rev)
 {
+    ngx_connection_t           *cc;
+    u_char                     *data;     
+    int                         error, index, pos, len;
 
+    cc = rev->data;
+
+    if (cc->destroyed) {
+        return;
+    }
+
+    if (rev->timedout) {
+        cc->timedout = 1;
+        goto fail;
+    }
+
+    if (rev->timer_set) {
+        ngx_del_timer(rev);
+    }
+
+    if(NGX_OK != ngx_mysql_read_packet(cc, rev)){
+        goto fail;
+    }
+    //got package now
+    data = ngx_mysql_connection.in->buf->pos + 4;
+    len = ngx_mysql_connection.in->buf->last - data;
+
+    return;
+fail:
+    ngx_mysql_connect_close(cc);
 }
 
 
