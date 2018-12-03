@@ -236,6 +236,7 @@ ngx_rtmp_recv(ngx_event_t *rev)
             ngx_log_debug1(NGX_LOG_DEBUG_RTMP, c->log, 0,
                     "reusing formerly read data: %d", old_size);
 
+            //把还没有处理的数据拷贝到buf的开头。
             b->pos = b->start;
             b->last = ngx_movemem(b->pos, old_pos, old_size);
 
