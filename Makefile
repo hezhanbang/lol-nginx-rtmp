@@ -1,8 +1,9 @@
+include *.make
+
 #version: debug or release
 #optimize: no or yes
 ver=debug
 opti=no
-libRtmp= ./doc/rtmpdump-2.3
 target=rtpServer.out
 
 STRIP = echo
@@ -51,8 +52,8 @@ clean:
 	rm -rf obj/
 	rm -rf *.out
 
-build: createdir $(DEP_OBJS) $(target)
-	g++ -o $(target) $(DEP_OBJS) $(CFLAGS) $(LDFLAGS) $(LDLIBS)
+build: createdir $(DEP_OBJS)
+	g++ -o $(target) $(DEP_OBJS) $(LDFLAGS) $(LDLIBS)
 	$(STRIP)
 
 rebuild: clean build
@@ -60,5 +61,5 @@ rebuild: clean build
 createdir:
 	mkdir -p obj/
 
-obj/main.o: CriticalSection.cpp
+obj/main.o: main.cpp
 	g++ $(CFLAGS) $(IFLAGS) -c main.cpp -o obj/main.o

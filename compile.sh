@@ -16,15 +16,20 @@ compileLibRtmp() {
 	tar zxf $ROOT_DIR/doc/rtmpdump-2.3.tgz -C $BUILD_DIR
 	cd $BUILD_DIR/rtmpdump-2.3
 
-	make SYS=posix CRYPTO= SHARED=
-	
+	make
+
+	cat > $ROOT_DIR/dep.make <<END
+		libRtmp=$BUILD_DIR/rtmpdump-2.3
+END
+
 	echo "done to build libRtmp"
+	echo
 }
 
 compileApp() {
 	cd $ROOT_DIR
 	rm -rf *.out
-	make
+	make libRtmp=$BUILD_DIR/rtmpdump-2.3
 	echo "done to build app"
 }
 
