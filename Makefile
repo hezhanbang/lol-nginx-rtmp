@@ -34,8 +34,11 @@ LDFLAGS     =-L$(libRtmp)/librtmp/
 LDSTATIC	= -Wl,-Bstatic
 LDDYNAMIC	= -Wl,-Bdynamic
 
-#uuid
+#rtmp
 LDLIBS      = $(LDSTATIC) -lrtmp
+LDLIBS     += $(LDDYNAMIC) -lssl
+LDLIBS     += $(LDDYNAMIC) -lcrypto
+LDLIBS     += $(LDDYNAMIC) -lz
 
 #common
 LDLIBS     += $(LDDYNAMIC) -ldl
