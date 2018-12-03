@@ -210,6 +210,8 @@ ngx_mysql_module_create_conf(ngx_cycle_t *cycle)
 ngx_int_t 
 ngx_mysql_query(char *sql)
 {
+    return NGX_OK;
+    
     if(!ngx_mysql_connection.connected){
         ngx_mysql_connect();
         return NGX_OK;
