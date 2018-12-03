@@ -5,7 +5,7 @@ ROOT_DIR=$(dirname $(readlink -f $0))
 cd $ROOT_DIR
 chmod a+x compile.sh
 
-BUILD_DIR=~/buildRtmp
+BUILD_DIR=~/buildGbRtp
 INSTALL_DIR=$BUILD_DIR/install
 VSCODE_GDB_DIR=$ROOT_DIR
 DEBUG_FLAGS=--with-debug
