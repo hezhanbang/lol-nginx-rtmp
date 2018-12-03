@@ -17,10 +17,6 @@ static ngx_int_t ngx_rtmp_add_ports(ngx_conf_t *cf, ngx_array_t *ports,
 static char *ngx_rtmp_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports);
 static ngx_int_t ngx_rtmp_add_addrs(ngx_conf_t *cf, ngx_rtmp_port_t *mport,
     ngx_rtmp_conf_addr_t *addr);
-#if (NGX_HAVE_INET6)
-static ngx_int_t ngx_rtmp_add_addrs6(ngx_conf_t *cf, ngx_rtmp_port_t *mport,
-    ngx_rtmp_conf_addr_t *addr);
-#endif
 static ngx_int_t ngx_rtmp_cmp_conf_addrs(const void *one, const void *two);
 static ngx_int_t ngx_rtmp_init_events(ngx_conf_t *cf,
         ngx_rtmp_core_main_conf_t *cmcf);
@@ -504,21 +500,10 @@ ngx_rtmp_add_ports(ngx_conf_t *cf, ngx_array_t *ports,
     struct sockaddr_in    *sin;
     ngx_rtmp_conf_port_t  *port;
     ngx_rtmp_conf_addr_t  *addr;
-#if (NGX_HAVE_INET6)
-    struct sockaddr_in6   *sin6;
-#endif
 
     sa = (struct sockaddr *) &listen->sockaddr;
 
     switch (sa->sa_family) {
-
-#if (NGX_HAVE_INET6)
-    case AF_INET6:
-        sin6 = (struct sockaddr_in6 *) sa;
-        p = sin6->sin6_port;
-        break;
-#endif
-
     default: /* AF_INET */
         sin = (struct sockaddr_in *) sa;
         p = sin->sin_port;
@@ -565,15 +550,6 @@ found:
     addr->ctx = listen->ctx;
     addr->bind = listen->bind;
     addr->wildcard = listen->wildcard;
-    addr->so_keepalive = listen->so_keepalive;
-#if (NGX_HAVE_KEEPALIVE_TUNABLE)
-    addr->tcp_keepidle = listen->tcp_keepidle;
-    addr->tcp_keepintvl = listen->tcp_keepintvl;
-    addr->tcp_keepcnt = listen->tcp_keepcnt;
-#endif
-#if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
-    addr->ipv6only = listen->ipv6only;
-#endif
 
     return NGX_OK;
 }
@@ -633,16 +609,7 @@ ngx_rtmp_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
             ls->log.data = &ls->addr_text;
             ls->log.handler = ngx_accept_log_error;
 
-            ls->keepalive = addr[i].so_keepalive;
-#if (NGX_HAVE_KEEPALIVE_TUNABLE)
-            ls->keepidle = addr[i].tcp_keepidle;
-            ls->keepintvl = addr[i].tcp_keepintvl;
-            ls->keepcnt = addr[i].tcp_keepcnt;
-#endif
-
-#if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
-            ls->ipv6only = addr[i].ipv6only;
-#endif
+            ls->keepalive = 0;
 
             mport = ngx_palloc(cf->pool, sizeof(ngx_rtmp_port_t));
             if (mport == NULL) {
@@ -660,13 +627,6 @@ ngx_rtmp_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
             }
 
             switch (ls->sockaddr->sa_family) {
-#if (NGX_HAVE_INET6)
-            case AF_INET6:
-                if (ngx_rtmp_add_addrs6(cf, mport, addr) != NGX_OK) {
-                    return NGX_CONF_ERROR;
-                }
-                break;
-#endif
             default: /* AF_INET */
                 if (ngx_rtmp_add_addrs(cf, mport, addr) != NGX_OK) {
                     return NGX_CONF_ERROR;
@@ -728,57 +688,6 @@ ngx_rtmp_add_addrs(ngx_conf_t *cf, ngx_rtmp_port_t *mport,
 
     return NGX_OK;
 }
-
-
-#if (NGX_HAVE_INET6)
-
-static ngx_int_t
-ngx_rtmp_add_addrs6(ngx_conf_t *cf, ngx_rtmp_port_t *mport,
-    ngx_rtmp_conf_addr_t *addr)
-{
-    u_char               *p;
-    size_t                len;
-    ngx_uint_t            i;
-    ngx_rtmp_in6_addr_t  *addrs6;
-    struct sockaddr_in6  *sin6;
-    u_char                buf[NGX_SOCKADDR_STRLEN];
-
-    mport->addrs = ngx_pcalloc(cf->pool,
-                               mport->naddrs * sizeof(ngx_rtmp_in6_addr_t));
-    if (mport->addrs == NULL) {
-        return NGX_ERROR;
-    }
-
-    addrs6 = mport->addrs;
-
-    for (i = 0; i < mport->naddrs; i++) {
-
-        sin6 = (struct sockaddr_in6 *) addr[i].sockaddr;
-        addrs6[i].addr6 = sin6->sin6_addr;
-
-        addrs6[i].conf.ctx = addr[i].ctx;
-
-        len = ngx_sock_ntop(addr[i].sockaddr,
-#if (nginx_version >= 1005003)
-                            addr[i].socklen,
-#endif
-                            buf, NGX_SOCKADDR_STRLEN, 1);
-
-        p = ngx_pnalloc(cf->pool, len);
-        if (p == NULL) {
-            return NGX_ERROR;
-        }
-
-        ngx_memcpy(p, buf, len);
-
-        addrs6[i].conf.addr_text.len = len;
-        addrs6[i].conf.addr_text.data = p;
-    }
-
-    return NGX_OK;
-}
-
-#endif
 
 
 static ngx_int_t

@@ -23,10 +23,6 @@ ngx_rtmp_init_connection(ngx_connection_t *c)
     ngx_rtmp_in_addr_t    *addr;
     ngx_rtmp_session_t    *s;
     ngx_rtmp_addr_conf_t  *addr_conf;
-#if (NGX_HAVE_INET6)
-    struct sockaddr_in6   *sin6;
-    ngx_rtmp_in6_addr_t   *addr6;
-#endif
 
     ++ngx_rtmp_naccepted;
 
@@ -54,29 +50,6 @@ ngx_rtmp_init_connection(ngx_connection_t *c)
         sa = c->local_sockaddr;
 
         switch (sa->sa_family) {
-
-#if (NGX_HAVE_INET6)
-        case AF_INET6:
-            sin6 = (struct sockaddr_in6 *) sa;
-
-            addr6 = port->addrs;
-
-            /* the last address is "*" */
-
-            for (i = 0; i < port->naddrs - 1; i++) {
-                if (ngx_memcmp(&addr6[i].addr6, &sin6->sin6_addr, 16) == 0) {
-                    break;
-                }
-            }
-
-            addr_conf = &addr6[i].conf;
-
-            break;
-#endif
-
-        case AF_UNIX:
-            /* fall through */
-
         default: /* AF_INET */
             sin = (struct sockaddr_in *) sa;
 
@@ -97,17 +70,6 @@ ngx_rtmp_init_connection(ngx_connection_t *c)
 
     } else {
         switch (c->local_sockaddr->sa_family) {
-
-#if (NGX_HAVE_INET6)
-        case AF_INET6:
-            addr6 = port->addrs;
-            addr_conf = &addr6[0].conf;
-            break;
-#endif
-
-        case AF_UNIX:
-            /* fall through */
-
         default: /* AF_INET */
             addr = port->addrs;
             addr_conf = &addr[0].conf;

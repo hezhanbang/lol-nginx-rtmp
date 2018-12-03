@@ -39,15 +39,6 @@ typedef struct {
 
     unsigned                bind:1;
     unsigned                wildcard:1;
-#if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
-    unsigned                ipv6only:2;
-#endif
-    unsigned                so_keepalive:2;
-#if (NGX_HAVE_KEEPALIVE_TUNABLE)
-    int                     tcp_keepidle;
-    int                     tcp_keepintvl;
-    int                     tcp_keepcnt;
-#endif
 } ngx_rtmp_listen_t;
 
 
@@ -60,16 +51,6 @@ typedef struct {
     in_addr_t               addr;
     ngx_rtmp_addr_conf_t    conf;
 } ngx_rtmp_in_addr_t;
-
-
-#if (NGX_HAVE_INET6)
-
-typedef struct {
-    struct in6_addr         addr6;
-    ngx_rtmp_addr_conf_t    conf;
-} ngx_rtmp_in6_addr_t;
-
-#endif
 
 
 typedef struct {
@@ -93,15 +74,6 @@ typedef struct {
 
     unsigned                bind:1;
     unsigned                wildcard:1;
-#if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
-    unsigned                ipv6only:2;
-#endif
-    unsigned                so_keepalive:2;
-#if (NGX_HAVE_KEEPALIVE_TUNABLE)
-    int                     tcp_keepidle;
-    int                     tcp_keepintvl;
-    int                     tcp_keepcnt;
-#endif
 } ngx_rtmp_conf_addr_t;
 
 
@@ -304,7 +276,6 @@ typedef struct ngx_rtmp_core_srv_conf_s {
     ngx_msec_t              timeout;
     ngx_msec_t              ping;
     ngx_msec_t              ping_timeout;
-    ngx_flag_t              so_keepalive;
     ngx_int_t               max_streams;
 
     ngx_uint_t              ack_window;

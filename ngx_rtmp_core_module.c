@@ -29,12 +29,6 @@ static char *ngx_rtmp_core_application(ngx_conf_t *cf, ngx_command_t *cmd,
 ngx_rtmp_core_main_conf_t      *ngx_rtmp_core_main_conf;
 
 
-static ngx_conf_deprecated_t  ngx_conf_deprecated_so_keepalive = {
-    ngx_conf_deprecated, "so_keepalive",
-    "so_keepalive\" parameter of the \"listen"
-};
-
-
 static ngx_command_t  ngx_rtmp_core_commands[] = {
 
     { ngx_string("server"),
@@ -57,13 +51,6 @@ static ngx_command_t  ngx_rtmp_core_commands[] = {
       NGX_RTMP_SRV_CONF_OFFSET,
       0,
       NULL },
-
-    { ngx_string("so_keepalive"),
-      NGX_RTMP_MAIN_CONF|NGX_RTMP_SRV_CONF|NGX_CONF_FLAG,
-      ngx_conf_set_flag_slot,
-      NGX_RTMP_SRV_CONF_OFFSET,
-      offsetof(ngx_rtmp_core_srv_conf_t, so_keepalive),
-      &ngx_conf_deprecated_so_keepalive },
 
     { ngx_string("timeout"),
       NGX_RTMP_MAIN_CONF|NGX_RTMP_SRV_CONF|NGX_CONF_TAKE1,
@@ -238,7 +225,6 @@ ngx_rtmp_core_create_srv_conf(ngx_conf_t *cf)
     conf->timeout = NGX_CONF_UNSET_MSEC;
     conf->ping = NGX_CONF_UNSET_MSEC;
     conf->ping_timeout = NGX_CONF_UNSET_MSEC;
-    conf->so_keepalive = NGX_CONF_UNSET;
     conf->max_streams = NGX_CONF_UNSET;
     conf->chunk_size = NGX_CONF_UNSET;
     conf->ack_window = NGX_CONF_UNSET_UINT;
@@ -264,7 +250,6 @@ ngx_rtmp_core_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_msec_value(conf->ping, prev->ping, 60000);
     ngx_conf_merge_msec_value(conf->ping_timeout, prev->ping_timeout, 30000);
 
-    ngx_conf_merge_value(conf->so_keepalive, prev->so_keepalive, 0);
     ngx_conf_merge_value(conf->max_streams, prev->max_streams, 32);
     ngx_conf_merge_value(conf->chunk_size, prev->chunk_size, 4096);
     ngx_conf_merge_uint_value(conf->ack_window, prev->ack_window, 5000000);
@@ -507,9 +492,6 @@ ngx_rtmp_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_rtmp_listen_t          *ls;
     struct sockaddr_in         *sin;
     ngx_rtmp_core_main_conf_t  *cmcf;
-#if (NGX_HAVE_INET6)
-    struct sockaddr_in6        *sin6;
-#endif
 
     value = cf->args->elts;
 
@@ -541,16 +523,6 @@ ngx_rtmp_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
 
         switch (sa->sa_family) {
-
-#if (NGX_HAVE_INET6)
-        case AF_INET6:
-            off = offsetof(struct sockaddr_in6, sin6_addr);
-            len = 16;
-            sin6 = (struct sockaddr_in6 *) sa;
-            port = sin6->sin6_port;
-            break;
-#endif
-
         default: /* AF_INET */
             off = offsetof(struct sockaddr_in, sin_addr);
             len = 4;
@@ -607,138 +579,10 @@ ngx_rtmp_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
 
         if (ngx_strncmp(value[i].data, "ipv6only=o", 10) == 0) {
-#if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
-            struct sockaddr  *sa;
-            u_char            buf[NGX_SOCKADDR_STRLEN];
-
-            sa = (struct sockaddr *) ls->sockaddr;
-
-            if (sa->sa_family == AF_INET6) {
-
-                if (ngx_strcmp(&value[i].data[10], "n") == 0) {
-                    ls->ipv6only = 1;
-
-                } else if (ngx_strcmp(&value[i].data[10], "ff") == 0) {
-                    ls->ipv6only = 0;
-
-                } else {
-                    ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                                       "invalid ipv6only flags \"%s\"",
-                                       &value[i].data[9]);
-                    return NGX_CONF_ERROR;
-                }
-
-                ls->bind = 1;
-
-            } else {
-                len = ngx_sock_ntop(sa,
-#if (nginx_version >= 1005003)
-                                    ls->socklen,
-#endif
-                                    buf, NGX_SOCKADDR_STRLEN, 1);
-
-                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                                   "ipv6only is not supported "
-                                   "on addr \"%*s\", ignored", len, buf);
-            }
-
-            continue;
-#else
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "bind ipv6only is not supported "
                                "on this platform");
             return NGX_CONF_ERROR;
-#endif
-        }
-
-        if (ngx_strncmp(value[i].data, "so_keepalive=", 13) == 0) {
-
-            if (ngx_strcmp(&value[i].data[13], "on") == 0) {
-                ls->so_keepalive = 1;
-
-            } else if (ngx_strcmp(&value[i].data[13], "off") == 0) {
-                ls->so_keepalive = 2;
-
-            } else {
-
-#if (NGX_HAVE_KEEPALIVE_TUNABLE)
-                u_char     *p, *end;
-                ngx_str_t   s;
-
-                end = value[i].data + value[i].len;
-                s.data = value[i].data + 13;
-
-                p = ngx_strlchr(s.data, end, ':');
-                if (p == NULL) {
-                    p = end;
-                }
-
-                if (p > s.data) {
-                    s.len = p - s.data;
-
-                    ls->tcp_keepidle = ngx_parse_time(&s, 1);
-                    if (ls->tcp_keepidle == (time_t) NGX_ERROR) {
-                        goto invalid_so_keepalive;
-                    }
-                }
-
-                s.data = (p < end) ? (p + 1) : end;
-
-                p = ngx_strlchr(s.data, end, ':');
-                if (p == NULL) {
-                    p = end;
-                }
-
-                if (p > s.data) {
-                    s.len = p - s.data;
-
-                    ls->tcp_keepintvl = ngx_parse_time(&s, 1);
-                    if (ls->tcp_keepintvl == (time_t) NGX_ERROR) {
-                        goto invalid_so_keepalive;
-                    }
-                }
-
-                s.data = (p < end) ? (p + 1) : end;
-
-                if (s.data < end) {
-                    s.len = end - s.data;
-
-                    ls->tcp_keepcnt = ngx_atoi(s.data, s.len);
-                    if (ls->tcp_keepcnt == NGX_ERROR) {
-                        goto invalid_so_keepalive;
-                    }
-                }
-
-                if (ls->tcp_keepidle == 0 && ls->tcp_keepintvl == 0
-                    && ls->tcp_keepcnt == 0)
-                {
-                    goto invalid_so_keepalive;
-                }
-
-                ls->so_keepalive = 1;
-
-#else
-
-                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                                   "the \"so_keepalive\" parameter accepts "
-                                   "only \"on\" or \"off\" on this platform");
-                return NGX_CONF_ERROR;
-
-#endif
-            }
-
-            ls->bind = 1;
-
-            continue;
-
-#if (NGX_HAVE_KEEPALIVE_TUNABLE)
-        invalid_so_keepalive:
-
-            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                               "invalid so_keepalive value: \"%s\"",
-                               &value[i].data[13]);
-            return NGX_CONF_ERROR;
-#endif
         }
 
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
