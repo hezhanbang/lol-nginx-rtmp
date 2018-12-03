@@ -273,9 +273,9 @@ extern ngx_rtmp_core_main_conf_t   *ngx_rtmp_core_main_conf;
 typedef struct ngx_rtmp_core_srv_conf_s {
     ngx_array_t             applications; /* ngx_rtmp_core_app_conf_t */
 
-    ngx_msec_t              timeout;
-    ngx_msec_t              ping;
-    ngx_msec_t              ping_timeout;
+    ngx_msec_t              timeout;  //服务器发送数据的发送超时时间，默认7秒。
+    ngx_msec_t              ping;   //从收到客户端的ping响应，到下一次服务器发送ping请求，这段时间间隔。
+    ngx_msec_t              ping_timeout;  //等待客户端ping回复的超时时间，默认30秒。
     ngx_int_t               max_streams;
 
     ngx_uint_t              ack_window;
