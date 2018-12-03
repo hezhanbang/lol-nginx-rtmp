@@ -3,18 +3,29 @@
 CUR_DIR=$(pwd)
 ROOT_DIR=$(dirname $(readlink -f $0))
 cd $ROOT_DIR
+chmod a+x compile.sh
 
 BUILD_DIR=~/buildRtmp
 INSTALL_DIR=$BUILD_DIR/install
 VSCODE_GDB_DIR=$ROOT_DIR
 DEBUG_FLAGS=--with-debug
-################################################## compile nginx
-compileNginx() {
-	rm -rf $ROOT_DIR/nginx/sbin/*
+
+################################################## compile
+compileLibRtmp() {
+	rm -rf $BUILD_DIR/rtmpdump-2.3
+	tar zxf $ROOT_DIR/doc/rtmpdump-2.3.tgz -C $BUILD_DIR
+	cd $BUILD_DIR/rtmpdump-2.3
+
+	make SYS=posix CRYPTO= SHARED=
+	
+	echo "done to build libRtmp"
+}
+
+compileApp() {
+	cd $ROOT_DIR
+	rm -rf *.out
 	make
-	make install
-	echo "####################################################"
-	echo "done to build nginx"
+	echo "done to build app"
 }
 
 ################################################## get argument
@@ -26,12 +37,12 @@ do
 	esac
 	case "$option" in
 		release=*) releaseOpt="$value" ;;
-		compileonly=*) compileOpt="$value" ;;
-		compileOnly=*) compileOpt="$value" ;;
+		apponly=*) appOnly="$value" ;;
+		appOnly=*) appOnly="$value" ;;
 	esac
 done
 
-echo "releaseOpt=$releaseOpt compileOpt=$compileOpt"
+echo "releaseOpt=$releaseOpt appOnly=$appOnly"
 echo "**************************************************"
 sleep 3
 
@@ -40,16 +51,12 @@ if [ ! -z $releaseOpt ]; then
 	DEBUG_FLAGS=
 fi
 
-if [ ! -z $compileOpt ]; then
-	cd $BUILD_DIR/nginx-1.14.0
-	compileNginx
+if [ ! -z $appOnly ]; then
+	compileApp
 	exit 0
 fi
 
-################################################## generate nginx-build environment, and configure nginx
-cd $ROOT_DIR
-chmod a+x compile.sh
-rm -rf nginx
+################################################## 第一次编译，compile all
 rm -rf $BUILD_DIR
 mkdir -p $BUILD_DIR
 
@@ -61,25 +68,14 @@ if [  $? -ne 0 ];then
 fi
 rm -rf $BUILD_DIR/.heb*
 
-tar zxf ./doc/nginx-1.14.0.tar.gz -C $BUILD_DIR
-cd $BUILD_DIR/nginx-1.14.0
-./configure --with-stream $DEBUG_FLAGS --without-http_rewrite_module --without-http_gzip_module --prefix=$INSTALL_DIR --add-module=$ROOT_DIR
-
-#移除ipv6的支持。
-chmod a+w ./objs/ngx_auto_config.h
-sed 's/#define NGX_HAVE_INET6  1/#define NGX_HAVE_INET6  0/g' < ./objs/ngx_auto_config.h > .heb2
-mv .heb2 ./objs/ngx_auto_config.h
-
-#编译nginx，并创建配置文件
-compileNginx
-rm -rf $INSTALL_DIR/conf/nginx.conf
-cp $ROOT_DIR/doc/nginx.conf $INSTALL_DIR/conf/
+#编译
+compileLibRtmp
+compileApp
 
 #设置vscode的gdb配置。
 VSCODE_GDB_DIR=$VSCODE_GDB_DIR/.vscode
 rm -rf $VSCODE_GDB_DIR
 mkdir -p $VSCODE_GDB_DIR
 GDB_CFG_PATH=$VSCODE_GDB_DIR/launch.json
-sed 's|aOut|'"$INSTALL_DIR"'/sbin/nginx|g' < $ROOT_DIR/doc/vscode.launch.json > $GDB_CFG_PATH
+sed 's|aOut|'"$ROOT_DIR"'/rtpServer.out|g' < $ROOT_DIR/doc/vscode.launch.json > $GDB_CFG_PATH
 cat $GDB_CFG_PATH
-
