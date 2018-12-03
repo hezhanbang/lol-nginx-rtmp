@@ -8,7 +8,9 @@ chmod a+x compile.sh
 BUILD_DIR=~/buildGbRtp
 INSTALL_DIR=$BUILD_DIR/install
 VSCODE_GDB_DIR=$ROOT_DIR
-DEBUG_FLAGS=--with-debug
+DEBUG_FLAGS="-g -O0"
+DEBUG_KEY="debug"
+OPTIMIZE="no"
 
 ################################################## compile
 compileLibRtmp() {
@@ -16,7 +18,7 @@ compileLibRtmp() {
 	tar zxf $ROOT_DIR/doc/rtmpdump-2.3.tgz -C $BUILD_DIR
 	cd $BUILD_DIR/rtmpdump-2.3
 
-	make
+	make OPT="$DEBUG_FLAGS"
 
 	cat > $ROOT_DIR/dep.make <<END
 		libRtmp=$BUILD_DIR/rtmpdump-2.3
@@ -29,7 +31,7 @@ END
 compileApp() {
 	cd $ROOT_DIR
 	rm -rf *.out
-	make libRtmp=$BUILD_DIR/rtmpdump-2.3
+	make ver=$DEBUG_KEY opti=$OPTIMIZE
 	echo "done to build app"
 }
 
@@ -54,6 +56,8 @@ sleep 3
 ################################################## we compile nginx only and simply
 if [ ! -z $releaseOpt ]; then
 	DEBUG_FLAGS=
+	DEBUG_KEY=
+	OPTIMIZE="yes"
 fi
 
 if [ ! -z $appOnly ]; then
@@ -75,6 +79,8 @@ rm -rf $BUILD_DIR/.heb*
 
 #编译
 compileLibRtmp
+cd $ROOT_DIR/
+make clean
 compileApp
 
 #设置vscode的gdb配置。

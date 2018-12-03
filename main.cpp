@@ -65,5 +65,18 @@ int main(){
 		RTMP_LogPrintf("Receive: %5dByte, Total: %5.2fkB\n",nRead,countbufsize*1.0/1024);
 	}
 
+	if(fp)
+		fclose(fp);
+ 
+	if(buf){
+		free(buf);
+	}
+ 
+	if(rtmp){
+		RTMP_Close(rtmp);
+		RTMP_Free(rtmp);
+		rtmp=NULL;
+	}	
+
 	return 0;
 }
