@@ -47,7 +47,7 @@ LDLIBS     += $(LDDYNAMIC) -lpthread
 LDLIBS     += $(LDDYNAMIC) -lrt
 
 #objects after compile
-DEP_OBJS    = obj/main.o
+DEP_OBJS    = obj/main.o obj/tcpEngine.o
 
 default:	build
 
@@ -66,3 +66,7 @@ createdir:
 
 obj/main.o: main.cpp
 	g++ $(CFLAGS) $(IFLAGS) -c main.cpp -o obj/main.o
+
+obj/tcpEngine.o: TcpEngine.h TcpEngine.cpp
+	g++ $(CFLAGS) $(IFLAGS) -c TcpEngine.cpp -o obj/tcpEngine.o
+
