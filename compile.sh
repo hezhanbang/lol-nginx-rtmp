@@ -26,8 +26,11 @@ compileNginx() {
 	make install
 	checkReturnCode "make install nginx"
 	
+	printf "${COLOR_BLUE}"
 	ls -lh $INSTALL_DIR/sbin/nginx
+	printf "${COLOR_CLEAR}"
 	checkReturnCode
+
 	printf "${COLOR_BLUE}************* done to build nginx *****************${COLOR_CLEAR}\n"
 }
 
