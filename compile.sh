@@ -1,23 +1,31 @@
-#!/bin/sh
+#!/bin/bash
 
 CUR_DIR=$(pwd)
 ROOT_DIR=$(dirname $(readlink -f $0))
 cd $ROOT_DIR
 
-BUILD_DIR=~/buildRtmp
-INSTALL_DIR=$BUILD_DIR/install
-VSCODE_GDB_DIR=$ROOT_DIR
-DEBUG_FLAGS=--with-debug
+checkReturnCode() {
+	ret_=$?
+	if [ $ret_ -ne 0 ]; then
+		echo "fail,  retCode '$ret_' is invalid, in '$1' [hebang file=${BASH_SOURCE[1]##*/} fun=${FUNCNAME[1]} line=${BASH_LINENO[0]}]" 
+		exit 22
+	fi
+}
+
 ################################################## compile nginx
 compileNginx() {
-	rm -rf $ROOT_DIR/nginx/sbin/*
+	rm -rf $INSTALL_DIR/sbin/*
 	make
+	checkReturnCode "make nginx"
+	
 	make install
+	checkReturnCode "make install nginx"
+	
 	echo "####################################################"
 	echo "done to build nginx"
 }
 
-################################################## get argument
+################################################## 获取命令行参数
 for option   #option是内置变量，代表了当前脚本程序的参数集合(不含脚本程序名)
 do
 	case "$option" in
@@ -26,32 +34,53 @@ do
 	esac
 	case "$option" in
 		release=*) releaseOpt="$value" ;;
-		compileonly=*) compileOpt="$value" ;;
-		compileOnly=*) compileOpt="$value" ;;
+		compileOnly=*) compileOnlyOpt="$value" ;;
+		buildDir=*) buildDirOpt="$value" ;;
 	esac
 done
 
-echo "releaseOpt=$releaseOpt compileOpt=$compileOpt"
+echo "releaseOpt=$releaseOpt compileOnlyOpt=$compileOnlyOpt buildDirOpt=$buildDirOpt"
 echo "**************************************************"
 sleep 3
 
-################################################## we compile nginx only and simply
+################################################## 设置全局参数
 if [ ! -z $releaseOpt ]; then
 	DEBUG_FLAGS=
 fi
 
-if [ ! -z $compileOpt ]; then
+if [ ! -z $buildDirOpt ]; then
+	BUILD_DIR=$buildDirOpt
+else
+	BUILD_DIR=$ROOT_DIR/buildRtmp  #default build dir
+fi
+
+INSTALL_DIR=$BUILD_DIR/install
+VSCODE_GDB_DIR=$ROOT_DIR
+DEBUG_FLAGS=--with-debug
+
+################################################## 增量编译
+if [ ! -z $compileOnlyOpt ]; then
 	cd $BUILD_DIR/nginx-1.14.0
+	checkReturnCode
+
 	compileNginx
 	exit 0
 fi
 
-################################################## generate nginx-build environment, and configure nginx
+################################################## 第一次编译：创建编译目录，修改编译配置项，编译，修改nginx配置文件，修改vscode配置文件。
 cd $ROOT_DIR
+
 chmod a+x compile.sh
+checkReturnCode
+
 rm -rf nginx
+checkReturnCode
+
 rm -rf $BUILD_DIR
+checkReturnCode
+
 mkdir -p $BUILD_DIR
+checkReturnCode
 
 #检测：编译目录是否创建成功，是否能新建文件。
 echo "temp" > $BUILD_DIR/.heb1
@@ -62,18 +91,26 @@ fi
 rm -rf $BUILD_DIR/.heb*
 
 tar zxf ./doc/nginx-1.14.0.tar.gz -C $BUILD_DIR
+checkReturnCode
+
 cd $BUILD_DIR/nginx-1.14.0
+checkReturnCode
+
 ./configure --with-stream $DEBUG_FLAGS --without-http_rewrite_module --without-http_gzip_module --prefix=$INSTALL_DIR --add-module=$ROOT_DIR
+checkReturnCode
 
 #移除ipv6的支持。
 chmod a+w ./objs/ngx_auto_config.h
 sed 's/#define NGX_HAVE_INET6  1/#define NGX_HAVE_INET6  0/g' < ./objs/ngx_auto_config.h > .heb2
 mv .heb2 ./objs/ngx_auto_config.h
 
-#编译nginx，并创建配置文件
+#编译安装nginx
 compileNginx
+
+#修改nginx配置文件
 rm -rf $INSTALL_DIR/conf/nginx.conf
 cp $ROOT_DIR/doc/nginx.conf $INSTALL_DIR/conf/
+checkReturnCode
 
 #设置vscode的gdb配置。
 VSCODE_GDB_DIR=$VSCODE_GDB_DIR/.vscode
@@ -81,5 +118,12 @@ rm -rf $VSCODE_GDB_DIR
 mkdir -p $VSCODE_GDB_DIR
 GDB_CFG_PATH=$VSCODE_GDB_DIR/launch.json
 sed 's|aOut|'"$INSTALL_DIR"'/sbin/nginx|g' < $ROOT_DIR/doc/vscode.launch.json > $GDB_CFG_PATH
+checkReturnCode
+
 cat $GDB_CFG_PATH
+checkReturnCode
+
+echo "*****************************"
+echo "******** done all ***********"
+exit 0
 
