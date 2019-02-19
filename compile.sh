@@ -4,10 +4,15 @@ CUR_DIR=$(pwd)
 ROOT_DIR=$(dirname $(readlink -f $0))
 cd $ROOT_DIR
 
+COLOR_CLEAR='\033[0m'
+COLOR_RED='\033[0;31m'
+COLOR_BLUE='\033[0;34m'
+COLOR_GREEN='\033[0;32m'
+
 checkReturnCode() {
 	ret_=$?
 	if [ $ret_ -ne 0 ]; then
-		echo "fail,  retCode '$ret_' is invalid, in '$1' [hebang file=${BASH_SOURCE[1]##*/} fun=${FUNCNAME[1]} line=${BASH_LINENO[0]}]" 
+		printf "fail,  retCode '$ret_' is invalid, in '$1' [hebang file=${BASH_SOURCE[1]##*/} fun=${FUNCNAME[1]} line=${BASH_LINENO[0]}]\n" 
 		exit 22
 	fi
 }
@@ -21,8 +26,9 @@ compileNginx() {
 	make install
 	checkReturnCode "make install nginx"
 	
-	echo "####################################################"
-	echo "done to build nginx"
+	ls -lh $INSTALL_DIR/sbin/nginx
+	checkReturnCode
+	printf "${COLOR_BLUE}************* done to build nginx *****************${COLOR_CLEAR}\n"
 }
 
 ################################################## 获取命令行参数
@@ -39,8 +45,8 @@ do
 	esac
 done
 
-echo "releaseOpt=$releaseOpt compileOnlyOpt=$compileOnlyOpt buildDirOpt=$buildDirOpt"
-echo "**************************************************"
+printf "${COLOR_GREEN}releaseOpt=$releaseOpt compileOnlyOpt=$compileOnlyOpt buildDirOpt=$buildDirOpt${COLOR_CLEAR}\n"
+printf "**************************************************\n"
 sleep 3
 
 ################################################## 设置全局参数
@@ -73,29 +79,19 @@ cd $ROOT_DIR
 chmod a+x compile.sh
 checkReturnCode
 
-rm -rf nginx
-checkReturnCode
-
+#创建编译目录
 rm -rf $BUILD_DIR
 checkReturnCode
-
 mkdir -p $BUILD_DIR
 checkReturnCode
 
-#检测：编译目录是否创建成功，是否能新建文件。
-echo "temp" > $BUILD_DIR/.heb1
-if [  $? -ne 0 ];then
-	echo "fail to test: can not create new file in $BUILD_DIR"
-	exit 1
-fi
-rm -rf $BUILD_DIR/.heb*
-
+#解压nginx压缩包
 tar zxf ./doc/nginx-1.14.0.tar.gz -C $BUILD_DIR
 checkReturnCode
-
 cd $BUILD_DIR/nginx-1.14.0
 checkReturnCode
 
+#修改编译配置项
 ./configure --with-stream $DEBUG_FLAGS --without-http_rewrite_module --without-http_gzip_module --prefix=$INSTALL_DIR --add-module=$ROOT_DIR
 checkReturnCode
 
@@ -116,6 +112,8 @@ checkReturnCode
 VSCODE_GDB_DIR=$VSCODE_GDB_DIR/.vscode
 rm -rf $VSCODE_GDB_DIR
 mkdir -p $VSCODE_GDB_DIR
+checkReturnCode
+
 GDB_CFG_PATH=$VSCODE_GDB_DIR/launch.json
 sed 's|aOut|'"$INSTALL_DIR"'/sbin/nginx|g' < $ROOT_DIR/doc/vscode.launch.json > $GDB_CFG_PATH
 checkReturnCode
@@ -123,7 +121,6 @@ checkReturnCode
 cat $GDB_CFG_PATH
 checkReturnCode
 
-echo "*****************************"
-echo "******** done all ***********"
+printf "\n${COLOR_BLUE}******** done all ***********${COLOR_CLEAR}\n"
 exit 0
 
