@@ -12,7 +12,7 @@ COLOR_GREEN='\033[0;32m'
 checkReturnCode() {
 	ret_=$?
 	if [ $ret_ -ne 0 ]; then
-		printf "fail,  retCode '$ret_' is invalid, in '$1' [hebang file=${BASH_SOURCE[1]##*/} fun=${FUNCNAME[1]} line=${BASH_LINENO[0]}]\n" 
+		printf "${COLOR_RED}[hebang] fail,  retCode '$ret_' is invalid, in '$1' [file=${BASH_SOURCE[1]##*/} fun=${FUNCNAME[1]} line=${BASH_LINENO[0]}]${COLOR_CLEAR}\n" 
 		exit 22
 	fi
 }
@@ -28,8 +28,8 @@ compileNginx() {
 	
 	printf "${COLOR_BLUE}"
 	ls -lh $INSTALL_DIR/sbin/nginx
-	printf "${COLOR_CLEAR}"
 	checkReturnCode
+	printf "${COLOR_CLEAR}"
 
 	printf "${COLOR_BLUE}************* done to build nginx *****************${COLOR_CLEAR}\n"
 }
