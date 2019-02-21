@@ -79,7 +79,7 @@ fi
 ################################################## 第一次编译：创建编译目录，修改编译配置项，编译，修改nginx配置文件，修改vscode配置文件。
 cd $ROOT_DIR
 
-chmod a+x compile.sh
+chmod +x compile.sh
 checkReturnCode
 
 #创建编译目录
@@ -99,7 +99,7 @@ checkReturnCode
 checkReturnCode
 
 #移除ipv6的支持。
-chmod a+w ./objs/ngx_auto_config.h
+chmod +w ./objs/ngx_auto_config.h
 sed 's/#define NGX_HAVE_INET6  1/#define NGX_HAVE_INET6  0/g' < ./objs/ngx_auto_config.h > .heb2
 mv .heb2 ./objs/ngx_auto_config.h
 
@@ -124,6 +124,6 @@ checkReturnCode
 cat $GDB_CFG_PATH
 checkReturnCode
 
-printf "\n${COLOR_BLUE}******** done all ***********${COLOR_CLEAR}\n"
+printf "\n${COLOR_BLUE}******** all done ***********${COLOR_CLEAR}\n"
 exit 0
 
